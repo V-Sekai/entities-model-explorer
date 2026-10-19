@@ -292,7 +292,7 @@ func run(mesh: String) -> String:
 
 func new_sandbox() -> void:
 	# wasm32 has one 4 GiB address space shared with the engine (and a second guest).
-	_sb = Bintr.make(self, ELF, 512 if OS.has_feature("web") else 1024, 4096)
+	_sb = Bintr.make(self, ELF, 512 if OS.has_feature("web") else 2048, 4096)
 
 
 # A rig that passes the humanoid gates is also saved as <base>.vrm: VrmExport renames the

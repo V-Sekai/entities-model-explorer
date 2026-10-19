@@ -11,7 +11,7 @@ extends RefCounted
 
 # Every guest the viewer loads: the ELF, memory_max in MiB, references_max.
 const GUESTS := [
-	["res://skintokens.elf", 1024, 4096],  # AutoRig
+	["res://skintokens.elf", 2048, 4096],  # AutoRig
 	["res://usd.elf", 2048, 4096],  # UsdImport
 	["res://motion.elf", 2048, 65536],  # Motion: Kimodo
 	["res://skintokens.elf", 2048, 65536],  # Motion: the clip cut and retarget
