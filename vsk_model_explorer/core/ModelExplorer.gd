@@ -83,6 +83,16 @@ func _ready():
 		var rig_on: bool = auto_rig.available()
 		if rig_on:
 			add_control_row(["keys", ["R"], "R", "Auto-rig a .glb"])
+		# M: the open rig walks like a character controller (motion matching on mm.elf).
+		move = MotionMatch.new()
+		if move.available() or "--move-quit" in OS.get_cmdline_user_args():
+			add_child(move)
+			move.status = auto_rig.show_status
+			move.moves_made.connect(_load_file)
+			add_control_row(["keys", ["M"], "M", "Walk with W A S D"])
+		else:
+			move.free()
+			move = null
 		motion = Motion.new()
 		var motion_on: bool = motion.available()
 		var args := OS.get_cmdline_user_args()
