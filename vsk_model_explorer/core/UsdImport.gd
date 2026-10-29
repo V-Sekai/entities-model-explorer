@@ -21,8 +21,28 @@ signal converted(source: String, glb: String, why: String)
 const Bintr = preload("res://vsk_model_explorer/core/Bintr.gd")
 const ELF := "res://usd.elf"
 const CHUNK := 8 << 20  # bytes per usd_push (the 16 MiB view)
+const ASSET_CHUNK := 8 << 20  # bytes per usd_asset_push
 const SLICE := 1 << 18  # items per array slice
 const MAX_WEIGHTS := 8
+# The extensions a loose document is made of: its layers and its textures. Only
+# these are streamed, so opening one layer in a busy folder does not sweep the
+# folder in.
+const DOC_EXT := [
+	"usd",
+	"usda",
+	"usdc",
+	"usdz",
+	"png",
+	"jpg",
+	"jpeg",
+	"exr",
+	"webp",
+	"tif",
+	"tiff",
+	"bmp",
+	"hdr",
+	"tx",
+]
 
 var _sb: Node
 var why := ""
@@ -60,13 +80,61 @@ func to_glb(path: String, out: String) -> String:
 	return ""
 
 
+# Streams a loose document into `sb` (the guest): every layer and texture under
+# `path`'s directory, each under its path relative to that directory, then opens
+# the root layer at `path`. A .usdz is not needed first. Returns the guest's
+# open line ("ok ..." or "ERR: ...").
+static func stream_document(sb: Node, path: String) -> String:
+	var base := path.get_base_dir()
+	var root := path.get_file()
+	var files: Array = []
+	_collect_files(base, base, files)
+	for f in files:
+		var rel: String = (f as String).substr(base.length() + 1)
+		var bytes := FileAccess.get_file_as_bytes(f)
+		if bytes.is_empty():
+			continue
+		if bytes.size() <= ASSET_CHUNK:
+			var r := str(sb.vmcall("usd_asset", rel, bytes))
+			if not r.begins_with("ok"):
+				return "ERR: streaming %s: %s" % [rel, r]
+		else:
+			var at := 0
+			while at < bytes.size():
+				var r := str(sb.vmcall("usd_asset_push", rel, bytes.slice(at, at + ASSET_CHUNK)))
+				if not r.begins_with("staged"):
+					return "ERR: streaming %s: %s" % [rel, r]
+				at += ASSET_CHUNK
+			var e := str(sb.vmcall("usd_asset_end", rel))
+			if not e.begins_with("ok"):
+				return "ERR: streaming %s: %s" % [rel, e]
+	return str(sb.vmcall("usd_open_asset", root))
+
+
+# Every layer and texture under `at`, depth first, into `out`.
+static func _collect_files(base: String, at: String, out: Array) -> void:
+	var d := DirAccess.open(at)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var n := d.get_next()
+	while n != "":
+		if not n.begins_with("."):
+			var full := at.path_join(n)
+			if d.current_is_dir():
+				_collect_files(base, full, out)
+			elif DOC_EXT.has(full.get_extension().to_lower()):
+				out.append(full)
+		n = d.get_next()
+	d.list_dir_end()
+
+
 func to_scene(path: String) -> Node3D:
 	if not ClassDB.class_exists("Sandbox"):
 		return _fail("OpenUSD needs the godot-sandbox library beside the program.")
 	if not FileAccess.file_exists(ELF):
 		return _fail("usd.elf is missing from the program.")
-	var bytes := FileAccess.get_file_as_bytes(path)
-	if bytes.is_empty():
+	if not FileAccess.file_exists(path):
 		return _fail("cannot read " + path.get_file())
 	# wasm32 has one 4 GiB address space shared with the engine: a 2 GiB guest arena does not fit.
 	_sb = Bintr.make(self, ELF, 512 if OS.has_feature("web") else 2048, 4096)
@@ -74,14 +142,24 @@ func to_scene(path: String) -> Node3D:
 		return _close(_fail("usd.elf did not load"))
 	_sb.vmcall("usd_init")
 	var line := ""
-	if bytes.size() <= CHUNK:
-		line = str(_sb.vmcall("usd_open", bytes))
+	if path.get_extension().to_lower() == "usdz":
+		# One package: its own resolver reads the zip's members, so the whole
+		# file goes in, in CHUNK pieces past the 16 MiB view.
+		var bytes := FileAccess.get_file_as_bytes(path)
+		if bytes.is_empty():
+			return _close(_fail("cannot read " + path.get_file()))
+		if bytes.size() <= CHUNK:
+			line = str(_sb.vmcall("usd_open", bytes))
+		else:
+			for at in range(0, bytes.size(), CHUNK):
+				var r := str(_sb.vmcall("usd_push", bytes.slice(at, at + CHUNK)))
+				if not r.begins_with("staged="):
+					return _close(_fail("OpenUSD: " + r))
+			line = str(_sb.vmcall("usd_open_staged"))
 	else:
-		for at in range(0, bytes.size(), CHUNK):
-			var r := str(_sb.vmcall("usd_push", bytes.slice(at, at + CHUNK)))
-			if not r.begins_with("staged="):
-				return _close(_fail("OpenUSD: " + r))
-		line = str(_sb.vmcall("usd_open_staged"))
+		# A loose layer: stream every layer and texture beside it in, then open
+		# the root. No .usdz has to be built first.
+		line = stream_document(_sb, path)
 	print("USD-OPEN ", line)
 	if not line.begins_with("ok"):
 		return _close(_fail("OpenUSD cannot open %s: %s" % [path.get_file(), line]))
