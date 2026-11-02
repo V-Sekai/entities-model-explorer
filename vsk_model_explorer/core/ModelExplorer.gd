@@ -329,19 +329,39 @@ func _emit_fbx_load_failed() -> void:
 	fbx_is_loaded.emit(false, null)
 
 
-# The name of the bone a VRM file calls the hips (VRM 1.0 or 0.x), or "" for a file that does not say.
-# Flex.gd uses it: the nodes above the hips (root motion, the centre of gravity) are not the body.
-func _hips_name(json: Dictionary) -> String:
+# The name of the bone a VRM file gives a humanoid role such as "hips" or "head" (VRM 1.0 or 0.x), or ""
+# for a file that does not say. Flex.gd uses the hips (the nodes above them, root motion and the centre
+# of gravity, are not the body); CamController.gd uses the head to find eye level.
+func _humanoid_name(json: Dictionary, role: String) -> String:
 	var ext: Dictionary = json.get("extensions", {})
 	var idx := -1
 	if ext.has("VRMC_vrm"):
-		idx = int(ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).get("hips", {}).get("node", -1))
+		idx = int(ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).get(role, {}).get("node", -1))
 	elif ext.has("VRM"):
 		for hb in ext["VRM"].get("humanoid", {}).get("humanBones", []):
-			if hb.get("bone", "") == "hips":
+			if hb.get("bone", "") == role:
 				idx = int(hb.get("node", -1))
 	var nodes: Array = json.get("nodes", [])
 	return str(nodes[idx].get("name", "")) if idx >= 0 and idx < nodes.size() else ""
+
+
+# The names of all the bones a VRM file gives a humanoid role (empty for a file that does not say):
+# Flex.gd moves only these on a humanoid, so hair, skirt and face joints stay still.
+func _humanoid_names(json: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray()
+	var ext: Dictionary = json.get("extensions", {})
+	var nodes: Array = json.get("nodes", [])
+	var indices := []
+	if ext.has("VRMC_vrm"):
+		for v in ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).values():
+			indices.append(int(v.get("node", -1)))
+	elif ext.has("VRM"):
+		for hb in ext["VRM"].get("humanoid", {}).get("humanBones", []):
+			indices.append(int(hb.get("node", -1)))
+	for i in indices:
+		if i >= 0 and i < nodes.size():
+			out.append(str(nodes[i].get("name", "")))
+	return out
 
 
 func _load_gltf(file: String):
@@ -357,7 +377,9 @@ func _load_gltf(file: String):
 
 	if err == OK:
 		gltf = gltf_doc.generate_scene(gltf_state)
-		gltf.set_meta("hips_bone", _hips_name(gltf_state.get_json()))
+		gltf.set_meta("hips_bone", _humanoid_name(gltf_state.get_json(), "hips"))
+		gltf.set_meta("head_bone", _humanoid_name(gltf_state.get_json(), "head"))
+		gltf.set_meta("humanoid_bones", _humanoid_names(gltf_state.get_json()))
 		gltf.add_to_group(GlobalSignal.GLTF_GROUP)
 		add_child.call_deferred(gltf)
 		_emit_gltf_load.call_deferred(gltf)
