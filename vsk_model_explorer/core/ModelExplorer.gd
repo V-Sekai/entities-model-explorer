@@ -398,7 +398,7 @@ func _add_version_label(layer: CanvasLayer) -> void:
 	layer.add_child(bg)
 	version_card = bg
 	version_label = label
-	get_viewport().resizing.connect(_on_version_resized)
+	get_viewport().size_changed.connect(_on_version_resized)
 	call_deferred("_fit_version_label", bg, label)
 
 
@@ -408,8 +408,8 @@ func _on_version_resized() -> void:
 
 func _fit_version_label(bg: PanelContainer, label: Label) -> void:
 	# Card padding is double the content margin; size the card, pin top-right.
-	var pw: float = label.get_text_width()
-	var ph: float = label.get_text_height()
+	var pw: float = label.get_theme_font("font").get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")).x
+	var ph: float = label.get_theme_font("font").get_height(label.get_theme_font_size("font_size"))
 	var pad: float = CardStyle.PAD * 2.0
 	var cw: float = pw + pad
 	var ch: float = ph + pad

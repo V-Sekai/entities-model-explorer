@@ -78,7 +78,7 @@ func _unhandled_input(event):
 
 func _zoom(factor: float):
 	var new_scale := scale * factor
-	new_scale = clamp_scale(new_scale)
+	new_scale = _clamp_scale(new_scale)
 	scale_object_local(new_scale)
 
 
@@ -100,7 +100,7 @@ func _touch(event: InputEventScreenTouch):
 		elif _touch_pos.size() == 1:
 			# We went from two to one finger: reset the single-finger reference to
 			# the remaining finger's position (no pinning the pinch state).
-			var p := _touch_pos.keys()[0]
+			var p: int = _touch_pos.keys()[0]
 			_last_single_pos = _touch_pos[p]
 		_touch_gesture()
 	else:
@@ -110,21 +110,21 @@ func _touch(event: InputEventScreenTouch):
 
 # Compute and apply the gesture from the current set of active touch positions.
 func _touch_gesture():
-	var pts := _touch_pos.values().array()
+	var pts: Array = _touch_pos.values()
 	if pts.size() == 0:
 		return
 	if pts.size() == 1:
 		# One finger down: orbit by the delta since the last frame with that finger.
 		# Ignore the very first frame (delta ~0) and small moves (a tap).
-		var now := pts[0]
+		var now: Vector2 = pts[0]
 		var delta := now - _last_single_pos
 		if delta.length() > 1.0:
 			_orbit(delta.x, delta.y)
 			_last_single_pos = now
 		return
 	# Two fingers: pinch (zoom) and two-finger pan (translate) from the midpoint.
-	var dist := pts[0].distance_to(pts[1])
-	var center := (pts[0] + pts[1]) * 0.5
+	var dist: float = pts[0].distance_to(pts[1])
+	var center: Vector2 = (pts[0] + pts[1]) * 0.5
 	if _last_pinch_dist <= 1.0:
 		# First time we have two fingers; baseline the pinch and center.
 		_last_pinch_dist = dist
@@ -147,7 +147,7 @@ func _orbit(dx: float, dy: float):
 	# Same convention as the right-drag: move the camera around the model.
 	self.rotate_y(deg_to_rad(-1 * dx * ROTATE_SPEED))
 	CamRotHelper.rotate_x(deg_to_rad(-1 * dy * ROTATE_SPEED))
-	var camera_rot := CamRotHelper.rotation
+	var camera_rot: Vector3 = CamRotHelper.rotation
 	camera_rot.x = clamp(camera_rot.x, -90, 90)
 	CamRotHelper.rotation = camera_rot
 
