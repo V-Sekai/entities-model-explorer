@@ -1,10 +1,17 @@
 extends Node
-# F plays a 20-minute flex motion on the open model: every joint except the roots swings about
-# its own random axis, up to 60 degrees, at its own rate (0.15 to 0.9 Hz). It is the motion of
-# skin-tokens-ggml's skin check (tools/skin_stress.cpp, 2 minutes there), made longer, so a rig
-# can be watched for torn or stretched skin. The motion is computed for each frame from the time;
-# nothing is saved and no clip is added to the file. F again stops it and puts the rest pose back.
-# The viewer's own animations pause while it plays.
+# F plays a 20-minute flex motion on the open model: the body's joints take
+# turns, one at a time. Each swings once about its own random axis, up to 60 degrees each way, in
+# an equal share of the 20 minutes, and is back at rest before the next begins. It is the motion of
+# skin-tokens-ggml's skin check (tools/skin_stress.cpp), made one joint at a time so a torn or
+# stretched patch of skin can be traced to the joint that moved. The motion is computed for each
+# frame from the time; nothing is saved and no clip is added to the file. F again stops it and puts
+# the pose it started from back. The viewer's own animations pause while it plays.
+# The body is the hips and everything below them. The nodes above the hips (the skeleton's root, root
+# motion, the centre of gravity) are global nodes, not part of the body, and never move. A VRM file says
+# which bone is the hips; a file that does not keeps only its skeleton roots still.
+# It starts from a standing idle: when the model has an animation named like "idle", that
+# animation's first frame is the pose every joint swings out of and returns to. A model with no
+# idle animation starts from its rest pose.
 #
 # Test mode: `-- <file.glb> --flex-quit` starts the motion once the file is open, checks that the
 # joints moved, jumps to the end, checks that the rest pose came back, then quits.
@@ -20,6 +27,9 @@ var _joints: Array = []
 var _scene: Node
 var _paused: Array = []
 var _label: Label
+var idle_used := ""   # the animation the swing started from, or "" for the rest pose
+var _slot := 1.0   # seconds each joint has
+var _last := -1    # the joint moved last frame
 var _test := false
 
 
@@ -68,8 +78,9 @@ func _collect() -> void:
 	rng.seed = SEED
 	for node in _scene.find_children("*", "Skeleton3D", true, false):
 		var sk := node as Skeleton3D
+		var global := _global_bones(sk)
 		for b in sk.get_bone_count():
-			if sk.get_bone_parent(b) < 0:
+			if sk.get_bone_parent(b) < 0 or global.has(b):
 				continue
 			var axis := Vector3(rng.randfn(), rng.randfn(), rng.randfn())
 			if axis.length() < 1.0e-6:
@@ -88,6 +99,19 @@ func _collect() -> void:
 			)
 
 
+# The bones above the hips: the nodes that carry the body (root, root motion, centre of gravity).
+func _global_bones(sk: Skeleton3D) -> Dictionary:
+	var out := {}
+	var hips := sk.find_bone(str(_scene.get_meta("hips_bone", ""))) if _scene.has_meta("hips_bone") else -1
+	if hips < 0:
+		return out
+	var b := sk.get_bone_parent(hips)
+	while b >= 0:
+		out[b] = true
+		b = sk.get_bone_parent(b)
+	return out
+
+
 func start() -> bool:
 	_collect()
 	if _joints.is_empty():
@@ -99,10 +123,28 @@ func start() -> bool:
 		if ap.is_playing():
 			ap.pause()
 			_paused.append(ap)
+	idle_used = _use_idle()
+	_slot = LENGTH / _joints.size()
+	_last = -1
 	time = 0.0
 	playing = true
 	_apply()
 	return true
+
+
+# Put the model in its idle animation's first frame and take that as every joint's starting pose.
+func _use_idle() -> String:
+	for node in _scene.find_children("*", "AnimationPlayer", true, false):
+		var ap := node as AnimationPlayer
+		for name in ap.get_animation_list():
+			if String(name).to_lower().contains("idle"):
+				ap.play(name)
+				ap.seek(0.0, true)
+				ap.pause()
+				for j in _joints:
+					j[2] = j[0].get_bone_pose_rotation(j[1])
+				return String(name)
+	return ""
 
 
 func stop() -> void:
@@ -131,13 +173,17 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
-	var amplitude := deg_to_rad(DEGREES)
-	for j in _joints:
-		var sk: Skeleton3D = j[0]
-		if not is_instance_valid(sk):
-			continue
-		var angle: float = amplitude * sin(TAU * j[4] * time + j[5])
-		sk.set_bone_pose_rotation(j[1], j[2] * Quaternion(j[3], angle))
+	var i := mini(int(time / _slot), _joints.size() - 1)
+	if _last >= 0 and _last != i:
+		var old: Array = _joints[_last]
+		if is_instance_valid(old[0]):
+			old[0].set_bone_pose_rotation(old[1], old[2])   # the joint that had its turn goes back to rest
+	var j: Array = _joints[i]
+	var sk: Skeleton3D = j[0]
+	if is_instance_valid(sk):
+		var u := time / _slot - i   # 0 to 1 across this joint's turn
+		sk.set_bone_pose_rotation(j[1], j[2] * Quaternion(j[3], deg_to_rad(DEGREES) * sin(TAU * u)))
+	_last = i
 	var t := int(time)
 	var left := int(LENGTH)
 	_show("Flex %02d:%02d / %02d:00  (F stops)" % [t / 60, t % 60, left / 60])
@@ -157,6 +203,16 @@ func _largest_turn() -> float:
 	return most
 
 
+# How many joints are away from their rest rotation: one while it plays.
+func _joints_away() -> int:
+	var n := 0
+	for j in _joints:
+		var q: Quaternion = j[2]
+		if rad_to_deg(q.angle_to(j[0].get_bone_pose_rotation(j[1]))) > 0.001:
+			n += 1
+	return n
+
+
 func _run_test() -> void:
 	if _scene == null:
 		printerr("FLEX-FAIL the model did not open")
@@ -171,6 +227,13 @@ func _run_test() -> void:
 	time = 7.0
 	_apply()
 	var moved := _largest_turn()
+	var away := _joints_away()
+	var above := 0   # joints that are ancestors of the hips: none may be in the list
+	for node in _scene.find_children("*", "Skeleton3D", true, false):
+		var g := _global_bones(node as Skeleton3D)
+		for j in _joints:
+			if j[0] == node and g.has(j[1]):
+				above += 1
 	var shown := _label.text
 	time = LENGTH - 0.001
 	await get_tree().process_frame
@@ -178,10 +241,10 @@ func _run_test() -> void:
 	var back := _largest_turn()
 	print(
 		(
-			"FLEX-RESULT joints=%d length=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
-			% [_joints.size(), int(LENGTH), moved, back, playing, shown]
+			"FLEX-RESULT joints=%d length=%d global_moved=%d joints_away=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
+			% [_joints.size(), int(LENGTH), above, away, moved, back, playing, shown]
 		)
 	)
-	var ok := moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
+	var ok := above == 0 and away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
 	print("FLEX-OK" if ok else "FLEX-FAIL")
 	get_tree().quit(0 if ok else 1)

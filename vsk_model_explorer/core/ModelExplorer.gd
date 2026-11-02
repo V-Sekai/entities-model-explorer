@@ -329,6 +329,21 @@ func _emit_fbx_load_failed() -> void:
 	fbx_is_loaded.emit(false, null)
 
 
+# The name of the bone a VRM file calls the hips (VRM 1.0 or 0.x), or "" for a file that does not say.
+# Flex.gd uses it: the nodes above the hips (root motion, the centre of gravity) are not the body.
+func _hips_name(json: Dictionary) -> String:
+	var ext: Dictionary = json.get("extensions", {})
+	var idx := -1
+	if ext.has("VRMC_vrm"):
+		idx = int(ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).get("hips", {}).get("node", -1))
+	elif ext.has("VRM"):
+		for hb in ext["VRM"].get("humanoid", {}).get("humanBones", []):
+			if hb.get("bone", "") == "hips":
+				idx = int(hb.get("node", -1))
+	var nodes: Array = json.get("nodes", [])
+	return str(nodes[idx].get("name", "")) if idx >= 0 and idx < nodes.size() else ""
+
+
 func _load_gltf(file: String):
 	var gltf_state: GLTFState = GLTFState.new()
 	gltf_state.handle_binary_image = GLTFState.HANDLE_BINARY_EMBED_AS_UNCOMPRESSED
@@ -342,6 +357,7 @@ func _load_gltf(file: String):
 
 	if err == OK:
 		gltf = gltf_doc.generate_scene(gltf_state)
+		gltf.set_meta("hips_bone", _hips_name(gltf_state.get_json()))
 		gltf.add_to_group(GlobalSignal.GLTF_GROUP)
 		add_child.call_deferred(gltf)
 		_emit_gltf_load.call_deferred(gltf)
