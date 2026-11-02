@@ -1,11 +1,14 @@
 extends Node
-# F plays a 20-minute flex motion on the open model: the joints (every one except the roots) take
+# F plays a 20-minute flex motion on the open model: the body's joints take
 # turns, one at a time. Each swings once about its own random axis, up to 60 degrees each way, in
 # an equal share of the 20 minutes, and is back at rest before the next begins. It is the motion of
 # skin-tokens-ggml's skin check (tools/skin_stress.cpp), made one joint at a time so a torn or
 # stretched patch of skin can be traced to the joint that moved. The motion is computed for each
 # frame from the time; nothing is saved and no clip is added to the file. F again stops it and puts
 # the pose it started from back. The viewer's own animations pause while it plays.
+# The body is the hips and everything below them. The nodes above the hips (the skeleton's root, root
+# motion, the centre of gravity) are global nodes, not part of the body, and never move. A VRM file says
+# which bone is the hips; a file that does not keeps only its skeleton roots still.
 # It starts from a standing idle: when the model has an animation named like "idle", that
 # animation's first frame is the pose every joint swings out of and returns to. A model with no
 # idle animation starts from its rest pose.
@@ -75,8 +78,9 @@ func _collect() -> void:
 	rng.seed = SEED
 	for node in _scene.find_children("*", "Skeleton3D", true, false):
 		var sk := node as Skeleton3D
+		var global := _global_bones(sk)
 		for b in sk.get_bone_count():
-			if sk.get_bone_parent(b) < 0:
+			if sk.get_bone_parent(b) < 0 or global.has(b):
 				continue
 			var axis := Vector3(rng.randfn(), rng.randfn(), rng.randfn())
 			if axis.length() < 1.0e-6:
@@ -93,6 +97,19 @@ func _collect() -> void:
 					phase
 				]
 			)
+
+
+# The bones above the hips: the nodes that carry the body (root, root motion, centre of gravity).
+func _global_bones(sk: Skeleton3D) -> Dictionary:
+	var out := {}
+	var hips := sk.find_bone(str(_scene.get_meta("hips_bone", ""))) if _scene.has_meta("hips_bone") else -1
+	if hips < 0:
+		return out
+	var b := sk.get_bone_parent(hips)
+	while b >= 0:
+		out[b] = true
+		b = sk.get_bone_parent(b)
+	return out
 
 
 func start() -> bool:
@@ -211,6 +228,12 @@ func _run_test() -> void:
 	_apply()
 	var moved := _largest_turn()
 	var away := _joints_away()
+	var above := 0   # joints that are ancestors of the hips: none may be in the list
+	for node in _scene.find_children("*", "Skeleton3D", true, false):
+		var g := _global_bones(node as Skeleton3D)
+		for j in _joints:
+			if j[0] == node and g.has(j[1]):
+				above += 1
 	var shown := _label.text
 	time = LENGTH - 0.001
 	await get_tree().process_frame
@@ -218,10 +241,10 @@ func _run_test() -> void:
 	var back := _largest_turn()
 	print(
 		(
-			"FLEX-RESULT joints=%d length=%d joints_away=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
-			% [_joints.size(), int(LENGTH), away, moved, back, playing, shown]
+			"FLEX-RESULT joints=%d length=%d global_moved=%d joints_away=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
+			% [_joints.size(), int(LENGTH), above, away, moved, back, playing, shown]
 		)
 	)
-	var ok := away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
+	var ok := above == 0 and away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
 	print("FLEX-OK" if ok else "FLEX-FAIL")
 	get_tree().quit(0 if ok else 1)
