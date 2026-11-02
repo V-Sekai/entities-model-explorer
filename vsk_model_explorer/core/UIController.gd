@@ -674,16 +674,15 @@ func _on_mesh_clicked(
 		meshViewer = _card_popup(MeshInfoViewer.instantiate())
 		meshViewer.set_mesh(mesh)
 
-		var pos = event.position + Vector2(60, -100)
-		# Prevent window out of screen
-		var viewportSize = get_viewport().size / 2
-		if pos.x > viewportSize.x:
-			pos.x = viewportSize.x
-		if pos.y < 0:
-			pos.y = 0
-
-		meshViewer.position = pos
-
+		# Docked at a fixed spot, top right, not beside the pointer: it covers none of the model, a
+		# second click replaces its contents in place, and it blocks nothing (the camera still works
+		# anywhere outside it). The bottom right belongs to the controls card.
+		meshViewer.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		meshViewer.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		meshViewer.offset_left = -CardStyle.MARGIN
+		meshViewer.offset_right = -CardStyle.MARGIN
+		meshViewer.offset_top = CardStyle.MARGIN
+		meshViewer.offset_bottom = CardStyle.MARGIN
 		add_child.call_deferred(meshViewer)
 
 
