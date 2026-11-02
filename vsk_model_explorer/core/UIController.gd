@@ -681,9 +681,38 @@ func _on_mesh_clicked(
 		meshViewer.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		meshViewer.offset_left = -CardStyle.MARGIN
 		meshViewer.offset_right = -CardStyle.MARGIN
-		meshViewer.offset_top = CardStyle.MARGIN
-		meshViewer.offset_bottom = CardStyle.MARGIN
+		# Below the build label, which holds the top right corner.
+		var below := CardStyle.MARGIN
+		var owner_node = get_parent()
+		if owner_node != null and "version_card" in owner_node and owner_node.version_card != null:
+			below = owner_node.version_card.position.y + owner_node.version_card.size.y + 8.0
+		meshViewer.offset_top = below
+		meshViewer.offset_bottom = below
+		_make_room_for(meshViewer)
 		add_child.call_deferred(meshViewer)
+
+
+# The controls card holds the right column below the build label, where the mesh details dock: it steps
+# aside while the details show and comes back when they close (if it was showing).
+var _card_hidden_for_details := false
+
+
+func _make_room_for(details: Control) -> void:
+	var owner_node = get_parent()
+	if owner_node == null or not ("controls_card" in owner_node) or owner_node.controls_card == null:
+		return
+	var card: Control = owner_node.controls_card
+	if card.visible:
+		card.visible = false
+		_card_hidden_for_details = true
+	details.tree_exited.connect(
+		func():
+			if meshViewer != details and _card_hidden_for_details and is_instance_valid(card):
+				pass  # replaced by the next click: the new details keep the card hidden
+			elif _card_hidden_for_details and is_instance_valid(card):
+				card.visible = true
+				_card_hidden_for_details = false
+	)
 
 
 func _on_mesh_mouse_entered(mesh: MeshInstance3D):
