@@ -273,7 +273,7 @@ func run(mesh: String) -> String:
 	f.store_buffer(glb)
 	f.close()
 	print("AUTO-RIG-RIGGED bytes=%d ms=%d" % [glb.size(), Time.get_ticks_msec() - t0])
-	var vrm := await rigged_to_vrm(work, base)
+	var vrm := await rigged_to_vrm(work, base, mesh)
 	DirAccess.remove_absolute(work)
 	if vrm != "":
 		return vrm
@@ -299,7 +299,7 @@ func new_sandbox() -> void:
 # matched joints to VRM bone names, turns the model to +Z and gives it MToon materials; then
 # the VRM step puts it in a T-pose and frames its joints, as for a .vrm input. Returns the .vrm
 # path, or "" when the rig is not a humanoid (the .rigged.glb stays the result).
-func rigged_to_vrm(rigged: String, base: String) -> String:
+func rigged_to_vrm(rigged: String, base: String, source := "") -> String:
 	var t0 := Time.get_ticks_msec()
 	new_sandbox()
 	if not _sb.has_function("skintokens_humanoid_start"):
@@ -316,7 +316,7 @@ func rigged_to_vrm(rigged: String, base: String) -> String:
 	show_status("Auto-rig: saving as VRM 1.0...")
 	var tmp := OS.get_user_data_dir().path_join("rigged.tmp.vrm")
 	var exporter := VrmExport.new()
-	var why := exporter.export_vrm(rigged, reply.roles, tmp)
+	var why := exporter.export_vrm(rigged, reply.roles, tmp, {}, source)
 	if why != "":
 		print("AUTO-RIG-VRM skipped: ", why)
 		return ""

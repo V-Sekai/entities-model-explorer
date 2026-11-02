@@ -102,7 +102,7 @@ var report := {}  # what the export decided, for logs and tests
 
 
 # Returns "" on success, else why the model does not fit a VRM.
-func export_vrm(glb_path: String, roles: Dictionary, out_path: String, meta := {}) -> String:
+func export_vrm(glb_path: String, roles: Dictionary, out_path: String, meta := {}, source := "") -> String:
 	for r in REQUIRED:
 		if not roles.has(r):
 			return "no %s bone" % r
@@ -112,6 +112,8 @@ func export_vrm(glb_path: String, roles: Dictionary, out_path: String, meta := {
 		return "cannot read " + glb_path
 	var scene: Node = doc.generate_scene(state)
 	var asset: Dictionary = state.get_json().get("asset", {})
+	if not asset.has("extras") and source != "":
+		asset = _asset_of(source)  # a rig step may drop extras; the file it was made from still has them
 	var why := _build(scene, roles, glb_path.get_file().get_basename().trim_suffix(".rigged"), asset, meta)
 	if why == "":
 		why = _write(scene, out_path)
@@ -119,6 +121,16 @@ func export_vrm(glb_path: String, roles: Dictionary, out_path: String, meta := {
 	return why
 
 
+# The "asset" object of a .glb's JSON chunk, or {} when it cannot be read.
+static func _asset_of(path: String) -> Dictionary:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null or f.get_length() < 20 or f.get_32() != 0x46546C67:
+		return {}
+	f.seek(12)
+	var n := f.get_32()
+	f.get_32()
+	var json = JSON.parse_string(f.get_buffer(n).get_string_from_utf8())
+	return json.get("asset", {}) if json is Dictionary else {}
 # The VRM meta comes from the source file: the glb's asset.extras (author, license, source, title), and
 # `given` (keys: title, authors, license_url, references) wins over it. Nothing is invented: a model
 # with no author or no licence URL is refused, because VRM 1.0 requires both.
