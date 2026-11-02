@@ -72,7 +72,7 @@ func _card_popup(p: Control) -> Control:
 		CardStyle.heading(c)
 	for b in head.find_children("*", "Button", true, false):
 		b.text = "Esc"
-		b.custom_minimum_size = Vector2.ZERO
+		b.custom_minimum_size = Vector2(44, 44) if DisplayServer.is_touchscreen_available() else Vector2.ZERO  # a fingertip needs 44 px
 	return p
 
 

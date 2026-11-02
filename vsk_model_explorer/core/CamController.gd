@@ -63,6 +63,10 @@ func _unhandled_input(event):
 			var camera_rot = CamRotHelper.rotation
 			camera_rot.x = clamp(camera_rot.x, -90, 90)
 			CamRotHelper.rotation = camera_rot
+		elif event.button_mask == MOUSE_BUTTON_MASK_MIDDLE:
+			# Pan, the same direction as the two-finger pan below
+			var rel: Vector2 = event.get_relative()
+			_translate(Vector3(-rel.x * PAN_SPEED, rel.y * PAN_SPEED, 0.0))
 	elif event is InputEventMouseButton and event.is_pressed():
 		# Zoom
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -74,12 +78,16 @@ func _unhandled_input(event):
 		# pan translates.
 		if event is InputEventScreenTouch:
 			_touch(event)
+		elif event is InputEventScreenDrag:
+			# A touchscreen reports a finger's move as a drag, not as another touch.
+			_touch_pos[event.index] = event.position
+			_touch_gesture()
 
 
 func _zoom(factor: float):
 	var new_scale := scale * factor
-	new_scale = clamp_scale(new_scale)
-	scale_object_local(new_scale)
+	new_scale = _clamp_scale(new_scale)
+	scale = new_scale  # scale_object_local multiplies, so it squared the scale and zoomed out did nothing from 1.2
 
 
 func _clamp_scale(scale: Vector3) -> Vector3:
@@ -90,7 +98,7 @@ func _clamp_scale(scale: Vector3) -> Vector3:
 
 func _touch(event: InputEventScreenTouch):
 	var idx := event.index
-	if event.position.y == -1.0:
+	if event.position.y == -1.0 or not event.pressed:  # y == -1 is the web shim's lift marker
 		# Finger lifted. Remove it from the active set and re-baseline what is left
 		# so the remaining finger (or none) continues without a jump.
 		_touch_pos.erase(idx)
@@ -100,31 +108,34 @@ func _touch(event: InputEventScreenTouch):
 		elif _touch_pos.size() == 1:
 			# We went from two to one finger: reset the single-finger reference to
 			# the remaining finger's position (no pinning the pinch state).
-			var p := _touch_pos.keys()[0]
+			var p: int = _touch_pos.keys()[0]
 			_last_single_pos = _touch_pos[p]
 		_touch_gesture()
 	else:
+		var first := _touch_pos.is_empty()
 		_touch_pos[event.index] = event.position
+		if first:
+			_last_single_pos = event.position  # a new touch starts here; orbiting from (0, 0) would jump
 		_touch_gesture()
 
 
 # Compute and apply the gesture from the current set of active touch positions.
 func _touch_gesture():
-	var pts := _touch_pos.values().array()
+	var pts: Array = _touch_pos.values()
 	if pts.size() == 0:
 		return
 	if pts.size() == 1:
 		# One finger down: orbit by the delta since the last frame with that finger.
 		# Ignore the very first frame (delta ~0) and small moves (a tap).
-		var now := pts[0]
+		var now: Vector2 = pts[0]
 		var delta := now - _last_single_pos
 		if delta.length() > 1.0:
 			_orbit(delta.x, delta.y)
 			_last_single_pos = now
 		return
 	# Two fingers: pinch (zoom) and two-finger pan (translate) from the midpoint.
-	var dist := pts[0].distance_to(pts[1])
-	var center := (pts[0] + pts[1]) * 0.5
+	var dist: float = pts[0].distance_to(pts[1])
+	var center: Vector2 = (pts[0] + pts[1]) * 0.5
 	if _last_pinch_dist <= 1.0:
 		# First time we have two fingers; baseline the pinch and center.
 		_last_pinch_dist = dist
@@ -147,7 +158,7 @@ func _orbit(dx: float, dy: float):
 	# Same convention as the right-drag: move the camera around the model.
 	self.rotate_y(deg_to_rad(-1 * dx * ROTATE_SPEED))
 	CamRotHelper.rotate_x(deg_to_rad(-1 * dy * ROTATE_SPEED))
-	var camera_rot := CamRotHelper.rotation
+	var camera_rot: Vector3 = CamRotHelper.rotation
 	camera_rot.x = clamp(camera_rot.x, -90, 90)
 	CamRotHelper.rotation = camera_rot
 
