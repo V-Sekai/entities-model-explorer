@@ -255,15 +255,7 @@ func run(mesh: String) -> String:
 	new_sandbox()
 	if not _sb.has_function("skintokens_start"):
 		return fail("skintokens.elf did not load")
-	if _rd == null:
-		_rd = RenderingServer.create_local_rendering_device()
-	if _rd == null:
-		return fail("this renderer gives no local RenderingDevice")
-	_sb.vmcall("skintokens_attach", _rd, 4096)
-	_sb.vmcall(
-		"skintokens_start", weights_dir(), mesh, "beams=1 temperature=0 GGML_RD_MAX_BUFFER_MB=128"
-	)
-	var glb := await drive(t0)
+	var glb := await drive(t0, mesh)
 	if glb.is_empty():
 		return ""
 	cleanup()
@@ -333,24 +325,52 @@ func rigged_to_vrm(rigged: String, base: String) -> String:
 	return out
 
 
-# Runs the started job to the end: answers its file reads and weight uploads, and returns the
-# result bytes, or nothing after fail().
-func drive(t0: int) -> PackedByteArray:
+# Runs the started job to the end on a worker thread, so the viewer and its MCP server stay
+# responsive for the minutes a rig takes. The worker answers the guest's file reads and weight
+# uploads; this function only waits, shows the elapsed time and, after an error, calls fail() on
+# the main thread. Returns the result bytes, or nothing after fail().
+func drive(t0: int, start_mesh := "") -> PackedByteArray:
+	var th := Thread.new()
+	th.start(_drive_worker.bind(start_mesh))
+	while th.is_alive():
+		await get_tree().process_frame
+		show_status("Auto-rig: %d s" % ((Time.get_ticks_msec() - t0) / 1000))
+	var res: Dictionary = th.wait_to_finish()
+	if res.has("error"):
+		return _stop(str(res["error"]))
+	return res["bytes"]
+
+
+func _err(why: String) -> Dictionary:
+	return {"error": why}
+
+
+# The pump loop of the former drive(). It never touches the scene tree: a yield waits 2 ms, and
+# an error is returned for the main thread to report.
+func _drive_worker(start_mesh: String) -> Dictionary:
+	if start_mesh != "":
+		# The GPU is set up on this thread, the one that uses it: buffers made on the main thread
+		# could not be allocated from here ("cannot allocate model component on backend").
+		if _rd == null:
+			_rd = RenderingServer.create_local_rendering_device()
+		if _rd == null:
+			return _err("this renderer gives no local RenderingDevice")
+		_sb.vmcall("skintokens_attach", _rd, 4096)
+		_sb.vmcall("skintokens_start", weights_dir(), start_mesh, "beams=1 temperature=0 GGML_RD_MAX_BUFFER_MB=128")
 	var feed := PackedByteArray()
 	while true:
 		var r = _sb.vmcall("skintokens_pump", feed)
 		feed = PackedByteArray()
 		if typeof(r) != TYPE_ARRAY or r.size() < 3:
-			return _stop("the rig program stopped")
+			return _err("the rig program stopped")
 		var hdr: PackedInt64Array = r[0]
 		match hdr[0]:
 			DONE:
 				break
 			ERROR:
-				return _stop(str(r[1]).strip_edges())
+				return _err(str(r[1]).strip_edges())
 			WAIT_GPU, COOP:
-				show_status("Auto-rig: %d s" % ((Time.get_ticks_msec() - t0) / 1000))
-				await get_tree().process_frame
+				OS.delay_msec(2)
 			READ:
 				feed = read(str(r[1]), hdr[1], hdr[2] if hdr[2] > 0 else 1 << 40)
 			UPLOAD:
@@ -359,10 +379,10 @@ func drive(t0: int) -> PackedByteArray:
 					var n: int = min(hdr[2] - done, UPLOAD_CHUNK)
 					var b := read(str(r[1]), hdr[1] + done, n)
 					if b.size() != n or _rd.buffer_update(r[2], hdr[3] + done, n, b) != OK:
-						return _stop("could not load the weights to the GPU")
+						return _err("could not load the weights to the GPU")
 					done += n
 			_:
-				return _stop("unknown request %d" % hdr[0])
+				return _err("unknown request %d" % hdr[0])
 	var size := int(_sb.vmcall("skintokens_result_size"))
 	var glb := PackedByteArray()
 	while glb.size() < size:
@@ -370,9 +390,9 @@ func drive(t0: int) -> PackedByteArray:
 			"skintokens_result_chunk", glb.size(), size - glb.size()
 		)
 		if chunk.is_empty():
-			return _stop("the result is incomplete")
+			return _err("the result is incomplete")
 		glb.append_array(chunk)
-	return glb
+	return {"bytes": glb}
 
 
 func _stop(why: String) -> PackedByteArray:
