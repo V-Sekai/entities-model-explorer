@@ -5,7 +5,10 @@ extends Node
 # skin-tokens-ggml's skin check (tools/skin_stress.cpp), made one joint at a time so a torn or
 # stretched patch of skin can be traced to the joint that moved. The motion is computed for each
 # frame from the time; nothing is saved and no clip is added to the file. F again stops it and puts
-# the rest pose back. The viewer's own animations pause while it plays.
+# the pose it started from back. The viewer's own animations pause while it plays.
+# It starts from a standing idle: when the model has an animation named like "idle", that
+# animation's first frame is the pose every joint swings out of and returns to. A model with no
+# idle animation starts from its rest pose.
 #
 # Test mode: `-- <file.glb> --flex-quit` starts the motion once the file is open, checks that the
 # joints moved, jumps to the end, checks that the rest pose came back, then quits.
@@ -21,6 +24,7 @@ var _joints: Array = []
 var _scene: Node
 var _paused: Array = []
 var _label: Label
+var idle_used := ""   # the animation the swing started from, or "" for the rest pose
 var _slot := 1.0   # seconds each joint has
 var _last := -1    # the joint moved last frame
 var _test := false
@@ -102,12 +106,28 @@ func start() -> bool:
 		if ap.is_playing():
 			ap.pause()
 			_paused.append(ap)
+	idle_used = _use_idle()
 	_slot = LENGTH / _joints.size()
 	_last = -1
 	time = 0.0
 	playing = true
 	_apply()
 	return true
+
+
+# Put the model in its idle animation's first frame and take that as every joint's starting pose.
+func _use_idle() -> String:
+	for node in _scene.find_children("*", "AnimationPlayer", true, false):
+		var ap := node as AnimationPlayer
+		for name in ap.get_animation_list():
+			if String(name).to_lower().contains("idle"):
+				ap.play(name)
+				ap.seek(0.0, true)
+				ap.pause()
+				for j in _joints:
+					j[2] = j[0].get_bone_pose_rotation(j[1])
+				return String(name)
+	return ""
 
 
 func stop() -> void:
