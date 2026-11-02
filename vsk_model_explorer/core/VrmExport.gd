@@ -15,7 +15,6 @@ const TOONY := 0.2
 const SHIFT := 0.0
 const INDIRECT := 0.9  # = 1 - giEqualizationFactor
 const SHADER_DIR := "res://addons/Godot-MToon-Shader/"
-const LICENSE_URL := "https://vrm.dev/licenses/1.0/"
 const VRMTopLevel := preload("res://addons/vrm/vrm_toplevel.gd")
 const VRMMeta := preload("res://addons/vrm/vrm_meta.gd")
 const EXTENSIONS := [
@@ -103,7 +102,7 @@ var report := {}  # what the export decided, for logs and tests
 
 
 # Returns "" on success, else why the model does not fit a VRM.
-func export_vrm(glb_path: String, roles: Dictionary, out_path: String) -> String:
+func export_vrm(glb_path: String, roles: Dictionary, out_path: String, meta := {}, source := "") -> String:
 	for r in REQUIRED:
 		if not roles.has(r):
 			return "no %s bone" % r
@@ -112,14 +111,59 @@ func export_vrm(glb_path: String, roles: Dictionary, out_path: String) -> String
 	if doc.append_from_file(glb_path, state) != OK:
 		return "cannot read " + glb_path
 	var scene: Node = doc.generate_scene(state)
-	var why := _build(scene, roles, glb_path.get_file().get_basename().trim_suffix(".rigged"))
+	var asset: Dictionary = state.get_json().get("asset", {})
+	if not asset.has("extras") and source != "":
+		asset = _asset_of(source)  # a rig step may drop extras; the file it was made from still has them
+	var why := _build(scene, roles, glb_path.get_file().get_basename().trim_suffix(".rigged"), asset, meta)
 	if why == "":
 		why = _write(scene, out_path)
 	scene.free()
 	return why
 
 
-func _build(scene: Node, roles: Dictionary, title: String) -> String:
+# The "asset" object of a .glb's JSON chunk, or {} when it cannot be read.
+static func _asset_of(path: String) -> Dictionary:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null or f.get_length() < 20 or f.get_32() != 0x46546C67:
+		return {}
+	f.seek(12)
+	var n := f.get_32()
+	f.get_32()
+	var json = JSON.parse_string(f.get_buffer(n).get_string_from_utf8())
+	return json.get("asset", {}) if json is Dictionary else {}
+# The VRM meta comes from the source file: the glb's asset.extras (author, license, source, title), and
+# `given` (keys: title, authors, license_url, references) wins over it. Nothing is invented: a model
+# with no author or no licence URL is refused, because VRM 1.0 requires both.
+# extras.author is "Name (url)" and extras.license is "SPDX-id (url)", the form Sketchfab writes.
+static func _meta_from(asset: Dictionary, title: String, given: Dictionary) -> Variant:
+	var extras: Dictionary = asset.get("extras", {})
+	var rx := RegEx.create_from_string("^(.*?)\\s*\\((https?://[^)]*)\\)\\s*$")
+	var meta: VRMMeta = VRMMeta.new()
+	meta.spec_version = "1.0"
+	meta.title = str(given.get("title", extras.get("title", title)))
+	var authors: PackedStringArray = given.get("authors", PackedStringArray())
+	if authors.is_empty() and extras.has("author"):
+		var m := rx.search(str(extras.author))
+		authors = PackedStringArray([m.get_string(1) if m else str(extras.author)])
+	if authors.is_empty():
+		return "no author: the file's asset.extras has none and none was given"
+	meta.authors = authors
+	var url: String = str(given.get("license_url", ""))
+	if url == "" and extras.has("license"):
+		var m := rx.search(str(extras.license))
+		url = m.get_string(2) if m else ""
+	if url == "":
+		return "no licence URL: the file's asset.extras has none and none was given"
+	meta.license_url = url
+	var refs: PackedStringArray = given.get("references", PackedStringArray())
+	if refs.is_empty() and extras.has("source"):
+		refs = PackedStringArray([str(extras.source)])
+	meta.references = refs
+	return meta
+func _build(scene: Node, roles: Dictionary, title: String, asset: Dictionary, given := {}) -> String:
+	var meta_or_why: Variant = _meta_from(asset, title, given)
+	if meta_or_why is String:
+		return meta_or_why
 	var skel: Skeleton3D
 	for s in scene.find_children("*", "Skeleton3D", true, false):
 		if s.find_bone(roles.hips) >= 0:
@@ -176,22 +220,7 @@ func _build(scene: Node, roles: Dictionary, title: String) -> String:
 	var root := Node3D.new()
 	root.name = title
 	root.set_script(VRMTopLevel)
-	var meta: VRMMeta = VRMMeta.new()
-	meta.spec_version = "1.0"
-	meta.title = title
-	meta.version = "1.0"
-	meta.authors = PackedStringArray(["Unknown"])
-	meta.license_url = LICENSE_URL
-	meta.allowed_user_name = "OnlyAuthor"
-	meta.violent_usage = "Disallow"
-	meta.sexual_usage = "Disallow"
-	meta.commercial_usage_type = "PersonalNonProfit"
-	meta.political_religious_usage = "Disallow"
-	meta.antisocial_hate_usage = "Disallow"
-	meta.credit_notation = "Required"
-	meta.allow_redistribution = "Disallow"
-	meta.modification = "Prohibited"
-	root.vrm_meta = meta
+	root.vrm_meta = meta_or_why
 	# Godot's multi-root export drops the joints of a Skeleton3D that is itself a scene root, so
 	# the skeleton hangs under a plain "Armature" node.
 	var armature := Node3D.new()
