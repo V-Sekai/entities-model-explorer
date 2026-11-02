@@ -15,7 +15,7 @@ const MARGIN := 16.0
 const TOGGLE := 48.0
 const FLASH_SECONDS := 0.25
 # Keys a tap on a row presses (the row's keys, as the card names them).
-const KEYS := {"W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
+const KEYS := {"L": KEY_L, "W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
 
 var INK: Color
 var MUTE: Color
@@ -27,7 +27,7 @@ const ROWS := [
 	["mouse", "middle", "Middle-drag", "Pan"],
 	["mouse", "wheel", "Scroll", "Zoom"],
 	["mouse", "left", "Click a mesh", "Mesh details"],
-	["keys", ["W"], "W", "Wireframe"],
+	["keys", ["L"], "L", "Wireframe"],
 	["keys", ["E"], "E", "Explode"],
 	["keys", ["G"], "G", "Hide grid"],
 	["keys", ["Esc"], "Esc", "Close a popup"],
