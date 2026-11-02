@@ -63,6 +63,10 @@ func _unhandled_input(event):
 			var camera_rot = CamRotHelper.rotation
 			camera_rot.x = clamp(camera_rot.x, -90, 90)
 			CamRotHelper.rotation = camera_rot
+		elif event.button_mask == MOUSE_BUTTON_MASK_MIDDLE:
+			# Pan, the same direction as the two-finger pan below
+			var rel: Vector2 = event.get_relative()
+			_translate(Vector3(-rel.x * PAN_SPEED, rel.y * PAN_SPEED, 0.0))
 	elif event is InputEventMouseButton and event.is_pressed():
 		# Zoom
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -79,7 +83,7 @@ func _unhandled_input(event):
 func _zoom(factor: float):
 	var new_scale := scale * factor
 	new_scale = _clamp_scale(new_scale)
-	scale_object_local(new_scale)
+	scale = new_scale  # scale_object_local multiplies, so it squared the scale and zoomed out did nothing from 1.2
 
 
 func _clamp_scale(scale: Vector3) -> Vector3:

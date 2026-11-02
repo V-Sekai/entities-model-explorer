@@ -52,6 +52,8 @@ const CARD_ROWS := [
 	["keys", ["C"], "C or pad B", "Crouch"],
 	["keys", ["Z"], "Z or pad Y", "Crawl"],
 	["keys", ["Space"], "Space or A", "Jump"],
+	["keys", ["Shift", "G"], "Shift+G", "Metric grid"],
+	["keys", ["O"], "O", "Obstacle course"],
 ]
 # Short lines: one long line is wider than a 1280 px window and the card cuts it off.
 const HELP := (
