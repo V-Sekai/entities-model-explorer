@@ -78,6 +78,10 @@ func _unhandled_input(event):
 		# pan translates.
 		if event is InputEventScreenTouch:
 			_touch(event)
+		elif event is InputEventScreenDrag:
+			# A touchscreen reports a finger's move as a drag, not as another touch.
+			_touch_pos[event.index] = event.position
+			_touch_gesture()
 
 
 func _zoom(factor: float):
@@ -94,7 +98,7 @@ func _clamp_scale(scale: Vector3) -> Vector3:
 
 func _touch(event: InputEventScreenTouch):
 	var idx := event.index
-	if event.position.y == -1.0:
+	if event.position.y == -1.0 or not event.pressed:  # y == -1 is the web shim's lift marker
 		# Finger lifted. Remove it from the active set and re-baseline what is left
 		# so the remaining finger (or none) continues without a jump.
 		_touch_pos.erase(idx)
@@ -108,7 +112,10 @@ func _touch(event: InputEventScreenTouch):
 			_last_single_pos = _touch_pos[p]
 		_touch_gesture()
 	else:
+		var first := _touch_pos.is_empty()
 		_touch_pos[event.index] = event.position
+		if first:
+			_last_single_pos = event.position  # a new touch starts here; orbiting from (0, 0) would jump
 		_touch_gesture()
 
 

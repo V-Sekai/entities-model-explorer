@@ -8,10 +8,13 @@ extends Control
 # row with add_row().
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
-const ROW := 34.0
+var ROW := 34.0   # 44 on a touchscreen: the least a fingertip can hit
 const PAD := 14.0
 const ICON_W := 40.0
 const MARGIN := 16.0
+const TOGGLE := 48.0
+# Keys a tap on a row presses (the row's keys, as the card names them).
+const KEYS := {"W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
 
 var INK: Color
 var MUTE: Color
@@ -32,6 +35,8 @@ const ROWS := [
 
 var font: Font
 var rows: Array = []
+var flash := -1   # the row just tapped
+var toggle: Button
 
 
 func _init() -> void:
@@ -41,6 +46,11 @@ func _init() -> void:
 	LIT = p["lit"]
 	for r in ROWS:
 		rows.append(r)
+	if DisplayServer.is_touchscreen_available():
+		ROW = 44.0
+		rows.insert(0, ["touch", "pinch", "Pinch", "Zoom"])
+		rows.insert(0, ["touch", "two", "2 finger drag", "Pan"])
+		rows.insert(0, ["touch", "one", "1 finger drag", "Orbit"])
 
 
 # Insert a row above the file-drop row, which stays last.
@@ -55,15 +65,27 @@ func _fit() -> void:
 	custom_minimum_size = Vector2(300, PAD * 2 + 22 + ROW * rows.size() + 18)
 	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	offset_right = -MARGIN
-	offset_bottom = -MARGIN
+	offset_bottom = -MARGIN - TOGGLE - 8.0
 	offset_left = -MARGIN - custom_minimum_size.x
-	offset_top = -MARGIN - custom_minimum_size.y
+	offset_top = -MARGIN - TOGGLE - 8.0 - custom_minimum_size.y
 
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP  # taps on a row press its key; the rest of the screen is untouched
 	_fit()
+	# A touch screen has no H key: a button that stays when the card is hidden.
+	toggle = Button.new()
+	toggle.text = "?"
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.custom_minimum_size = Vector2(TOGGLE, TOGGLE)
+	toggle.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	toggle.offset_right = -MARGIN
+	toggle.offset_bottom = -MARGIN
+	toggle.offset_left = -MARGIN - TOGGLE
+	toggle.offset_top = -MARGIN - TOGGLE
+	toggle.pressed.connect(func(): visible = not visible)
+	get_parent().add_child.call_deferred(toggle)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -72,11 +94,50 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		visible = not visible
 
 
+func _gui_input(event: InputEvent) -> void:
+	# A tap arrives as a mouse click (the engine emulates one from a touch); read the touch itself only when it does not.
+	var at := Vector2(-1, -1)
+	var mb := event as InputEventMouseButton
+	var st := event as InputEventScreenTouch
+	if mb and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+		at = mb.position
+	elif st and st.pressed and not Input.is_emulating_mouse_from_touch():
+		at = st.position
+	if at.x < 0:
+		return
+	var i := int((at.y - (PAD + 22.0)) / ROW)
+	if i < 0 or i >= rows.size():
+		return
+	accept_event()
+	var r: Array = rows[i]
+	if r[0] != "keys" or r[1].is_empty() or not KEYS.has(r[1][-1]):
+		return
+	flash = i
+	queue_redraw()
+	await _press(KEYS[r[1][-1]], r[1].size() > 1 and r[1][0] == "Shift")
+	flash = -1
+	queue_redraw()
+
+
+# Press and release a key as the keyboard would; held for a frame so the actions see it.
+func _press(code: int, shift: bool) -> void:
+	for down in [true, false]:
+		var e := InputEventKey.new()
+		e.physical_keycode = code
+		e.keycode = code
+		e.pressed = down
+		e.shift_pressed = shift
+		Input.parse_input_event(e)
+		await get_tree().process_frame
+
+
 func _draw() -> void:
 	draw_style_box(CardStyle.card_box(), Rect2(Vector2.ZERO, size))
 	draw_string(font, Vector2(PAD, PAD + 13), "CONTROLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, MUTE)
 	var y := PAD + 22.0
 	for r in rows:
+		if rows.find(r) == flash:
+			draw_rect(Rect2(4, y, size.x - 8, ROW), Color(LIT, 0.25))
 		var c := Vector2(PAD + ICON_W * 0.5, y + ROW * 0.5)
 		match r[0]:
 			"mouse":
@@ -88,6 +149,8 @@ func _draw() -> void:
 				_key(c, r[1][0])
 			"file":
 				_file(c)
+			"touch":
+				_fingers(c, r[1])
 		draw_string(
 			font,
 			Vector2(PAD + ICON_W + 10, y + ROW * 0.5 + 5),
@@ -204,3 +267,19 @@ func _file(c: Vector2) -> void:
 	draw_line(c + Vector2(0, -3), c + Vector2(0, 7), LIT, 1.5)
 	draw_line(c + Vector2(-3, 4), c + Vector2(0, 7), LIT, 1.5)
 	draw_line(c + Vector2(3, 4), c + Vector2(0, 7), LIT, 1.5)
+
+
+# Fingers as dots with an arrow: one drag, two drag, or a pinch (arrows toward each other).
+func _fingers(c: Vector2, part: String) -> void:
+	var dots: Array = [c]
+	if part != "one":
+		dots = [c + Vector2(-8, 0), c + Vector2(8, 0)]
+	for d in dots:
+		draw_circle(d, 5.0, INK)
+	if part == "pinch":
+		draw_line(c + Vector2(-17, 0), c + Vector2(-12, 0), LIT, 1.5)
+		draw_line(c + Vector2(17, 0), c + Vector2(12, 0), LIT, 1.5)
+	else:
+		draw_line(c + Vector2(-2, 12), c + Vector2(14, 12), LIT, 1.5)
+		draw_line(c + Vector2(10, 9), c + Vector2(14, 12), LIT, 1.5)
+		draw_line(c + Vector2(10, 15), c + Vector2(14, 12), LIT, 1.5)
