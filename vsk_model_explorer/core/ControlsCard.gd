@@ -13,8 +13,9 @@ const PAD := 14.0
 const ICON_W := 40.0
 const MARGIN := 16.0
 const TOGGLE := 48.0
+const FLASH_SECONDS := 0.25
 # Keys a tap on a row presses (the row's keys, as the card names them).
-const KEYS := {"W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
+const KEYS := {"L": KEY_L, "W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
 
 var INK: Color
 var MUTE: Color
@@ -26,7 +27,7 @@ const ROWS := [
 	["mouse", "middle", "Middle-drag", "Pan"],
 	["mouse", "wheel", "Scroll", "Zoom"],
 	["mouse", "left", "Click a mesh", "Mesh details"],
-	["keys", ["W"], "W", "Wireframe"],
+	["keys", ["L"], "L", "Wireframe"],
 	["keys", ["E"], "E", "Explode"],
 	["keys", ["G"], "G", "Hide grid"],
 	["keys", ["Esc"], "Esc", "Close a popup"],
@@ -115,7 +116,9 @@ func _gui_input(event: InputEvent) -> void:
 	flash = i
 	queue_redraw()
 	await _press(KEYS[r[1][-1]], r[1].size() > 1 and r[1][0] == "Shift")
-	flash = -1
+	await get_tree().create_timer(FLASH_SECONDS).timeout   # the key takes two frames; the highlight must outlast a glance
+	if flash == i:
+		flash = -1
 	queue_redraw()
 
 
@@ -137,7 +140,7 @@ func _draw() -> void:
 	var y := PAD + 22.0
 	for r in rows:
 		if rows.find(r) == flash:
-			draw_rect(Rect2(4, y, size.x - 8, ROW), Color(LIT, 0.25))
+			draw_rect(Rect2(4, y, size.x - 8, ROW), Color(LIT, 0.55))
 		var c := Vector2(PAD + ICON_W * 0.5, y + ROW * 0.5)
 		match r[0]:
 			"mouse":

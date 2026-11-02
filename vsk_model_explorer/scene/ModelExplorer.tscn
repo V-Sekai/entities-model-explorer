@@ -55,8 +55,9 @@ attributes = SubResource("CameraAttributesPhysical_6umus")
 transform = Transform3D(0.85798, -0.214782, 0.466625, -0.00966859, 0.901478, 0.432717, -0.513591, -0.375774, 0.771374, 4.30535, 3.06095, 0)
 shadow_enabled = true
 
-[node name="Node" type="Node" parent="." unique_id=35495315]
+[node name="Node" type="Node" parent="." unique_id=35495315 node_paths=PackedStringArray("Grid")]
 script = ExtResource("4_3e4pv")
+Grid = NodePath("../GizmoPlane")
 
 [node name="InfoPanel" type="PanelContainer" parent="Node" unique_id=399172890]
 visible = false
