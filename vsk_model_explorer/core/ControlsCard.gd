@@ -13,6 +13,11 @@ const PAD := 14.0
 const ICON_W := 40.0
 const MARGIN := 16.0
 const TOGGLE := 48.0
+# Rows whose key moves the model (the pieces fly apart, the joints swing, the body walks). They sit
+# together below a gap, away from the keys that only change how it looks, so a stray tap on a
+# wireframe or grid row cannot set the model in motion.
+const MOTION := ["E", "F", "M or Start"]
+const GAP := 24.0
 const FLASH_SECONDS := 0.25
 # Keys a tap on a row presses (the row's keys, as the card names them).
 const KEYS := {"L": KEY_L, "W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
@@ -28,9 +33,9 @@ const ROWS := [
 	["mouse", "wheel", "Scroll", "Zoom"],
 	["mouse", "left", "Click a mesh", "Mesh details"],
 	["keys", ["L"], "L", "Wireframe"],
-	["keys", ["E"], "E", "Explode"],
 	["keys", ["G"], "G", "Hide grid"],
 	["keys", ["Esc"], "Esc", "Close a popup"],
+	["keys", ["E"], "E", "Explode"],
 	["file", "", "Drop a file", ".glb .gltf .vrm .usd"],
 ]
 
@@ -56,14 +61,18 @@ func _init() -> void:
 
 # Insert a row above the file-drop row, which stays last.
 func add_row(row: Array) -> void:
-	rows.insert(rows.size() - 1, row)
+	var motion: bool = row[0] == "keys" and MOTION.has(row[2])
+	var at := rows.size() - 1
+	if not motion and _motion_start() >= 0:
+		at = _motion_start()   # a row that only changes the look stays above the motion rows
+	rows.insert(at, row)
 	_fit()
 	queue_redraw()
 
 
 # Pinned to the bottom-right corner, MARGIN px in; the offsets follow the height as rows change.
 func _fit() -> void:
-	custom_minimum_size = Vector2(300, PAD * 2 + 22 + ROW * rows.size() + 18)
+	custom_minimum_size = Vector2(300, PAD * 2 + 22 + ROW * rows.size() + 18 + (GAP if _motion_start() >= 0 else 0.0))
 	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	offset_right = -MARGIN
 	offset_bottom = -MARGIN - TOGGLE - 8.0
@@ -95,6 +104,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		visible = not visible
 
 
+# Index of the first row that sets the model in motion, or -1.
+func _motion_start() -> int:
+	for k in rows.size():
+		if rows[k][0] == "keys" and MOTION.has(rows[k][2]):
+			return k
+	return -1
+
+
+# Where row k starts, with the gap above the motion rows.
+func _row_top(k: int) -> float:
+	var m := _motion_start()
+	return PAD + 22.0 + k * ROW + (GAP if m >= 0 and k >= m else 0.0)
+
+
 func _gui_input(event: InputEvent) -> void:
 	# A tap arrives as a mouse click (the engine emulates one from a touch); read the touch itself only when it does not.
 	var at := Vector2(-1, -1)
@@ -106,8 +129,11 @@ func _gui_input(event: InputEvent) -> void:
 		at = st.position
 	if at.x < 0:
 		return
-	var i := int((at.y - (PAD + 22.0)) / ROW)
-	if i < 0 or i >= rows.size():
+	var i := -1
+	for k in rows.size():
+		if at.y >= _row_top(k) and at.y < _row_top(k) + ROW:
+			i = k
+	if i < 0:
 		return
 	accept_event()
 	var r: Array = rows[i]
@@ -139,6 +165,7 @@ func _draw() -> void:
 	draw_string(font, Vector2(PAD, PAD + 13), "CONTROLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, MUTE)
 	var y := PAD + 22.0
 	for r in rows:
+		y = _row_top(rows.find(r))
 		if rows.find(r) == flash:
 			draw_rect(Rect2(4, y, size.x - 8, ROW), Color(LIT, 0.55))
 		var c := Vector2(PAD + ICON_W * 0.5, y + ROW * 0.5)
@@ -172,7 +199,6 @@ func _draw() -> void:
 			13,
 			MUTE
 		)
-		y += ROW
 	draw_string(
 		font,
 		Vector2(PAD, size.y - PAD + 2),
