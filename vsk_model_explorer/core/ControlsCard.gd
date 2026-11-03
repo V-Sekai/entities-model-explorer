@@ -8,6 +8,7 @@ extends Control
 # row with add_row().
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
+const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
 var ROW := 34.0   # 44 on a touchscreen: the least a fingertip can hit
 const PAD := 14.0
 const ICON_W := 40.0
@@ -82,6 +83,7 @@ func _fit() -> void:
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
+	visible = ViewerSettings.get_bool("controls_card", true)   # shown or hidden as it was left
 	mouse_filter = Control.MOUSE_FILTER_STOP  # taps on a row press its key; the rest of the screen is untouched
 	_fit()
 	# A touch screen has no H key: a button that stays when the card is hidden.
@@ -94,14 +96,19 @@ func _ready() -> void:
 	toggle.offset_bottom = -MARGIN
 	toggle.offset_left = -MARGIN - TOGGLE
 	toggle.offset_top = -MARGIN - TOGGLE
-	toggle.pressed.connect(func(): visible = not visible)
+	toggle.pressed.connect(_toggle_shown)
 	get_parent().add_child.call_deferred(toggle)
+
+
+func _toggle_shown() -> void:
+	visible = not visible
+	ViewerSettings.set_bool("controls_card", visible)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k and k.pressed and not k.echo and k.keycode == KEY_H:
-		visible = not visible
+		_toggle_shown()
 
 
 # Index of the first row that sets the model in motion, or -1.

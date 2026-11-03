@@ -33,6 +33,7 @@ var meshViewer
 const DYNAMIC_CONTROL_GROUP = "dynamic control"
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
+const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
 
 var card_theme: Theme = CardStyle.make_theme()
 
@@ -55,6 +56,13 @@ var _ui_touch_cancelled: bool = false
 
 func _ready():
 	GlobalSignal.trigger_texture_viewer.connect(_show_texture_viewer)
+	# The toggles come back as they were left.
+	wireframe_on = ViewerSettings.get_bool("wireframe", false)
+	grid_hidden = ViewerSettings.get_bool("grid_hidden", false)
+	if wireframe_on:
+		_set_wireframe(true)
+	if grid_hidden:
+		_set_grid_hidden(true)
 	# Every control surface takes the controls card's look. The panels hang off this plain Node, and
 	# Godot passes a theme down only through Controls, so each top-level panel gets it here.
 	for panel in [InfoPanel, LoadingPanel, MsgPanel]:
@@ -87,6 +95,7 @@ func _process(_delta):
 	if Input.is_action_just_pressed("toggle_wireframe"):
 		wireframe_on = not wireframe_on
 		_set_wireframe(wireframe_on)
+		ViewerSettings.set_bool("wireframe", wireframe_on)
 		wireframe_toggled.emit(wireframe_on)
 
 	if Input.is_action_just_pressed("explode_meshes"):
@@ -95,6 +104,7 @@ func _process(_delta):
 	if Input.is_action_just_pressed("toggle_grid"):
 		grid_hidden = not grid_hidden
 		_set_grid_hidden(grid_hidden)
+		ViewerSettings.set_bool("grid_hidden", grid_hidden)
 
 
 func _on_scroll_input(event, from_control: Tree):
