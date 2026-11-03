@@ -90,6 +90,31 @@ func draw_uv_texture(mesh: Mesh) -> PackedVector2Array:
 	return uvLines
 
 
+# What the UV viewer draws for a mesh: its UV lines, and the base colour image of its material (null when
+# it has none), which the lines are drawn over. Lines are empty when the mesh has no UVs.
+func uv_view(mi: MeshInstance3D) -> Dictionary:
+	var out := {"lines": draw_uv_texture(mi.mesh), "tex": null}
+	if mi.mesh == null:
+		return out
+	for i in mi.mesh.get_surface_count():
+		var tex := _base_texture(mi.get_active_material(i))
+		if tex != null:
+			out["tex"] = tex
+			break
+	return out
+
+
+func _base_texture(mat: Material) -> Texture2D:
+	if mat is BaseMaterial3D:
+		return (mat as BaseMaterial3D).albedo_texture
+	if mat is ShaderMaterial:   # MToon and other shaders name their base image differently
+		for param in ["_MainTex", "main_tex", "albedo_texture", "base_color_texture", "texture_albedo", "BaseColorTexture"]:
+			var t = (mat as ShaderMaterial).get_shader_parameter(param)
+			if t is Texture2D:
+				return t
+	return null
+
+
 func face_count(mesh: Mesh) -> int:
 	var current_face_count: int = 0
 

@@ -519,9 +519,9 @@ func _on_mesh_item_double_clicked(tree: Tree):
 	var meshItem: TreeItem = tree.get_selected()
 	var mesh: MeshInstance3D = meshItem.get_metadata(0)
 	if mesh != null:
-		var uvLines = MeshExt.draw_uv_texture(mesh.mesh)
-		if uvLines.size() > 0:
-			GlobalSignal.trigger_texture_viewer.emit(uvLines)
+		var view := MeshExt.uv_view(mesh)
+		if view["lines"].size() > 0:
+			GlobalSignal.trigger_texture_viewer.emit(view)
 
 		GlobalSignal.reposition_camera.emit(mesh.mesh.get_aabb())
 
