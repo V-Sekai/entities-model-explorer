@@ -101,7 +101,10 @@ func refine(shell: String) -> Array:
 	else:
 		var least := -1
 		for k in seen:
-			if seen[k] >= 0 and (least < 0 or seen[k] < seen[least] or (seen[k] == seen[least] and k < least)):
+			if (
+				seen[k] >= 0
+				and (least < 0 or seen[k] < seen[least] or (seen[k] == seen[least] and k < least))
+			):
 				least = k
 		if least < 0:
 			return []
@@ -138,7 +141,11 @@ func fit_candidates(shell: String) -> Array:
 func choose(shell: String) -> Dictionary:
 	var b := bound(shell)
 	if b.is_empty():
-		if int(rounds.get(shell, 0)) < REFINE_ROUNDS and not _probed(shell).is_empty() and not refine_preview(shell).is_empty():
+		if (
+			int(rounds.get(shell, 0)) < REFINE_ROUNDS
+			and not _probed(shell).is_empty()
+			and not refine_preview(shell).is_empty()
+		):
 			return {"k": -1, "reason": "refine pending"}
 		var seen := _probed(shell)
 		var least := -1

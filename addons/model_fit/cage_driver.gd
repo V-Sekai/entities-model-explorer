@@ -65,7 +65,13 @@ func _wait(cap_ms: int) -> String:
 	while Time.get_ticks_msec() - t0 < cap_ms:
 		last = str(sandbox.vmcall("cage_tick", float(Time.get_ticks_usec()), 200))
 		var st := last.get_slice(" ", 0)
-		if st == "state=idle" or st == "state=failed" or st == "state=bound" or st == "state=done" or st.ends_with("_done"):
+		if (
+			st == "state=idle"
+			or st == "state=failed"
+			or st == "state=bound"
+			or st == "state=done"
+			or st.ends_with("_done")
+		):
 			break
 		if yielder.is_valid():
 			await yielder.call()
@@ -73,7 +79,9 @@ func _wait(cap_ms: int) -> String:
 
 
 # Triangles of the body with a vertex inside the shell's box grown by BODY_CROP; returns {v, t}.
-static func crop_body(shell_v: PackedVector3Array, body_v: PackedVector3Array, body_t: PackedInt32Array) -> Dictionary:
+static func crop_body(
+	shell_v: PackedVector3Array, body_v: PackedVector3Array, body_t: PackedInt32Array
+) -> Dictionary:
 	var lo := Vector3(1e9, 1e9, 1e9)
 	var hi := Vector3(-1e9, -1e9, -1e9)
 	for p in shell_v:
@@ -88,7 +96,14 @@ static func crop_body(shell_v: PackedVector3Array, body_v: PackedVector3Array, b
 		var inside := false
 		for k in 3:
 			var p: Vector3 = body_v[body_t[t * 3 + k]]
-			if p.x >= lo.x and p.x <= hi.x and p.y >= lo.y and p.y <= hi.y and p.z >= lo.z and p.z <= hi.z:
+			if (
+				p.x >= lo.x
+				and p.x <= hi.x
+				and p.y >= lo.y
+				and p.y <= hi.y
+				and p.z >= lo.z
+				and p.z <= hi.z
+			):
 				inside = true
 		if inside:
 			for k in 3:
@@ -135,7 +150,9 @@ func bind(shell_v: PackedVector3Array, shell_t: PackedInt32Array, knots: int) ->
 	return r
 
 
-func _bind_welded(shell_v: PackedVector3Array, shell_t: PackedInt32Array, knots: int, flip: bool) -> Dictionary:
+func _bind_welded(
+	shell_v: PackedVector3Array, shell_t: PackedInt32Array, knots: int, flip: bool
+) -> Dictionary:
 	var t0 := Time.get_ticks_msec()
 	var gt := shell_t.duplicate()
 	if flip:
@@ -148,7 +165,18 @@ func _bind_welded(shell_v: PackedVector3Array, shell_t: PackedInt32Array, knots:
 	var err := str(sandbox.vmcall("cage_net_from_patches", gv, gt, gv, knots))
 	var net_line := await _wait(NET_CAP_MS)
 	if net_line.contains("state=failed"):
-		return {"ok": false, "outside": -1, "state": "net failed", "knots": 0, "ms": Time.get_ticks_msec() - t0, "line": net_line, "error": err, "flipped": flip, "wt": gt, "wv": shell_v}
+		return {
+			"ok": false,
+			"outside": -1,
+			"state": "net failed",
+			"knots": 0,
+			"ms": Time.get_ticks_msec() - t0,
+			"line": net_line,
+			"error": err,
+			"flipped": flip,
+			"wt": gt,
+			"wv": shell_v
+		}
 	var nv = sandbox.vmcall("cage_net_vertices")
 	var ct: PackedInt32Array = sandbox.vmcall("cage_net_indices")
 	var cage := PackedVector3Array()
@@ -172,13 +200,28 @@ func _bind_welded(shell_v: PackedVector3Array, shell_t: PackedInt32Array, knots:
 		if m != null:
 			out = int(m.get_string(1))
 	log.append("bind K=%d%s: %s" % [knots, " (flipped)" if flip else "", line.left(200)])
-	return {"ok": out == 0, "outside": out, "state": line.get_slice(" ", 0), "knots": cage.size(), "ms": Time.get_ticks_msec() - t0, "line": line, "error": "", "flipped": flip}
+	return {
+		"ok": out == 0,
+		"outside": out,
+		"state": line.get_slice(" ", 0),
+		"knots": cage.size(),
+		"ms": Time.get_ticks_msec() - t0,
+		"line": line,
+		"error": "",
+		"flipped": flip
+	}
 
 
 # bind() then the fit. Returns bind()'s dictionary plus, when bound: result (the fitted vertices, one per ORIGINAL shell vertex), report, inside,
 # below, dmin, move (mean displacement over the welded vertices, metres), max_move, fit_ms. A shell with no body triangle within BODY_CROP of its
 # box is returned unchanged (nothing can clip).
-func fit(shell_v: PackedVector3Array, shell_t: PackedInt32Array, body_v: PackedVector3Array, body_t: PackedInt32Array, knots: int) -> Dictionary:
+func fit(
+	shell_v: PackedVector3Array,
+	shell_t: PackedInt32Array,
+	body_v: PackedVector3Array,
+	body_t: PackedInt32Array,
+	knots: int
+) -> Dictionary:
 	var r := await bind(shell_v, shell_t, knots)
 	if not r["ok"]:
 		return r
@@ -208,7 +251,15 @@ func fit(shell_v: PackedVector3Array, shell_t: PackedInt32Array, body_v: PackedV
 		col.append(0)
 		wt.append(1.0)
 	var bones := PackedFloat32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
-	sandbox.vmcall("cage_fit_set", bones, rowptr, col, wt, PackedInt32Array(), "margin %s w_L 0.001 w_r 0.0001" % str(margin))
+	sandbox.vmcall(
+		"cage_fit_set",
+		bones,
+		rowptr,
+		col,
+		wt,
+		PackedInt32Array(),
+		"margin %s w_L 0.001 w_r 0.0001" % str(margin)
+	)
 	sandbox.vmcall("cage_queue_fit")
 	await _wait(FIT_CAP_MS)
 	var report := str(sandbox.vmcall("cage_report"))
@@ -257,7 +308,14 @@ static func _keyf(text: String, key: String, fallback: float) -> float:
 # The full search for one shell with the frontier class: probe, refine, fit the candidates, choose. `frontier` is a frontier_knots.gd
 # instance and keeps what was learned; `shell` is its key for this shell. Returns {k, reason, fit} (fit is the chosen K's fit dictionary,
 # with the fitted vertices) or {k = -1, reason, ...} when no K could be used.
-func search(frontier, shell: String, shell_v: PackedVector3Array, shell_t: PackedInt32Array, body_v: PackedVector3Array, body_t: PackedInt32Array) -> Dictionary:
+func search(
+	frontier,
+	shell: String,
+	shell_v: PackedVector3Array,
+	shell_t: PackedInt32Array,
+	body_v: PackedVector3Array,
+	body_t: PackedInt32Array
+) -> Dictionary:
 	var tris := shell_t.size() / 3
 	for k in frontier.round1(shell, tris):
 		var r := await bind(shell_v, shell_t, k)
@@ -274,7 +332,9 @@ func search(frontier, shell: String, shell_v: PackedVector3Array, shell_t: Packe
 		var f := await fit(shell_v, shell_t, body_v, body_t, k)
 		fits[k] = f
 		if f.has("result"):
-			frontier.record_fit(shell, k, int(f["inside"]), int(f["below"]), float(f["move"]), int(f["fit_ms"]))
+			frontier.record_fit(
+				shell, k, int(f["inside"]), int(f["below"]), float(f["move"]), int(f["fit_ms"])
+			)
 		else:
 			frontier.record_fit(shell, k, 1 << 20, 1 << 20, 1e9, int(f.get("ms", 0)))
 	var c: Dictionary = frontier.choose(shell)
@@ -323,7 +383,9 @@ func _vertex_normals(v: PackedVector3Array, t: PackedInt32Array) -> PackedVector
 
 
 # Push the cage out until every shell vertex has winding >= 0.5 in it.
-func _contain(cage: PackedVector3Array, ct: PackedInt32Array, pts: PackedVector3Array) -> PackedVector3Array:
+func _contain(
+	cage: PackedVector3Array, ct: PackedInt32Array, pts: PackedVector3Array
+) -> PackedVector3Array:
 	var cv := PackedVector3Array(cage)
 	for _it in CONTAIN_ROUNDS:
 		var outside := _outside(cv, ct, pts)
@@ -335,7 +397,10 @@ func _contain(cage: PackedVector3Array, ct: PackedInt32Array, pts: PackedVector3
 			var best := 1e30
 			var best_t := -1
 			for t in ct.size() / 3:
-				var d := _closest_on_tri(pts[vi], cv[ct[t * 3]], cv[ct[t * 3 + 1]], cv[ct[t * 3 + 2]]).distance_to(pts[vi])
+				var d := (
+					_closest_on_tri(pts[vi], cv[ct[t * 3]], cv[ct[t * 3 + 1]], cv[ct[t * 3 + 2]])
+					. distance_to(pts[vi])
+				)
 				if d < best:
 					best = d
 					best_t = t
