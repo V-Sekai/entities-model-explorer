@@ -5,7 +5,7 @@ extends HBoxContainer
 # It appears when walk mode is available (mm.elf and the clips), as the controls card's walk rows do.
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
 const HEIGHT := 48.0
-var move: Node   # MotionMatch.gd
+var move: Node  # MotionMatch.gd
 var _walk: Button
 var _course: Button
 var _grid: Button
@@ -17,9 +17,24 @@ func _ready() -> void:
 	_walk = _button("Walk", "M: the open rig walks (WASD, or click the floor)")
 	_course = _button("Course", "O: the obstacle course")
 	_grid = _button("Grid", "Shift+G: the metric grid")
-	_walk.toggled.connect(func(on: bool): if move.on != on: move.toggle())
-	_course.toggled.connect(func(on: bool): if move.course: move.course.set_on(on))
-	_grid.toggled.connect(func(on: bool): if move.grid: move.grid.set_on(on))
+	_walk.toggled.connect(_on_walk)
+	_course.toggled.connect(_on_course)
+	_grid.toggled.connect(_on_grid)
+
+
+func _on_walk(on: bool) -> void:
+	if move.on != on:
+		move.toggle()
+
+
+func _on_course(on: bool) -> void:
+	if move.course:
+		move.course.set_on(on)
+
+
+func _on_grid(on: bool) -> void:
+	if move.grid:
+		move.grid.set_on(on)
 
 
 func _button(text: String, tip: String) -> Button:
