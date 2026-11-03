@@ -12,8 +12,8 @@ GODOT = os.environ["GODOT"]
 MODEL = os.environ["MODEL"]
 TOL, REPEATS = 12, 2  # a setting is run REPEATS times at once (the viewer steps by real frame time, so runs differ); it passes only if all pass
 src = open(ME + "/tools/course/course_script.py").read()
-bar = {"fail": 1562, "pass": 1650}      # from the first search: 1562 fails, 1650 passes
-tun = {"fail": 938, "pass": 1000}       # from the first search: 938 fails, 1000 passes
+bar = {"fail": int(os.environ.get("BAR_FAIL", 1562)), "pass": int(os.environ.get("BAR_PASS", 1650))}  # defaults from the first search
+tun = {"fail": int(os.environ.get("TUN_FAIL", 938)), "pass": int(os.environ.get("TUN_PASS", 1000))}  # BAR_/TUN_ FAIL and PASS set the starting brackets (mm); MOVE_CRAWL=prone asks for the prone kind
 rows = []
 
 def trial(i, b, t):

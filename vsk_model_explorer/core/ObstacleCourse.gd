@@ -34,7 +34,7 @@ const STEP_UP := 0.45
 # crouching and crawling (MotionMatch's STAND, CROUCH, CRAWL). A vertical cylinder from a step
 # above the feet to that height (mjc_player_band), so steps, slopes and bumps stay walkable.
 const BODY_RADIUS := 0.25
-const BODY_HEIGHT := [1.75, 1.2, 0.6]
+const BODY_HEIGHT := [1.75, 1.2, 0.6, 0.55]  # stand, crouch, crawl, prone (the belly crawl's head top, measured: 0.55 course metres; it must be above STEP_UP)
 const RESOLVE_PASSES := 3
 
 var _course: Node3D
@@ -77,7 +77,7 @@ func place(origin: Vector3, forward: Vector3, scale_: float) -> void:
 # them: steps of at most half the body's radius, each pushed out of every collider it overlaps.
 func slide(from: Vector3, to: Vector3, mode: int, s: float) -> Vector3:
 	var d := Vector3(to.x - from.x, 0, to.z - from.z)
-	if not visible or not _ready_for(clampi(mode, 0, 2)) or d.length() < 1e-9:
+	if not visible or not _ready_for(clampi(mode, 0, 3)) or d.length() < 1e-9:
 		return to
 	var n := maxi(1, ceili(d.length() / (BODY_RADIUS * s * 0.5)))
 	var p := Vector2(from.x, from.z)

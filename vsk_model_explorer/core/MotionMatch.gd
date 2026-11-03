@@ -32,7 +32,9 @@ const ROOT := "MMRoot"
 const STAND := 0
 const CROUCH := 1
 const CRAWL := 2
-const MODE_NAMES := ["standing", "crouching", "crawling"]
+const PRONE := 3  # flat on the belly; mm.elf asks for it as mode 6 (see MM_PRONE)
+const MM_PRONE := 6
+const MODE_NAMES := ["standing", "crouching", "crawling", "prone"]
 # Walk to a point: a press and release closer than TAP_SLOP pixels is a tap (a drag is not).
 # The model stops within ARRIVE SOMA metres of the point.
 const TAP_SLOP := 12.0
@@ -79,7 +81,7 @@ var _scale := 1.0
 var _phi := 0.0
 var _walk_speed := 1.3
 var _run_speed := 3.5
-var _mode_speed := [1.3, 0.8, 0.4]
+var _mode_speed := [1.3, 0.8, 0.4, 0.3]
 var _mode := STAND
 var _jump_pressed := false
 var _pad_prev := {}
@@ -151,7 +153,7 @@ func say(text: String) -> void:
 
 
 # The walk keys. In walk mode they belong to the walk: no other part of the viewer gets them.
-const WALK_KEYS := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_C, KEY_Z, KEY_SPACE]
+const WALK_KEYS := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_C, KEY_Z, KEY_X, KEY_SPACE]
 
 
 # _input runs before the GUI and before _unhandled_key_input, so a focused button or list does
@@ -178,6 +180,8 @@ func _input(event: InputEvent) -> void:
 		_mode = STAND if _mode == CROUCH else CROUCH
 	elif k.keycode == KEY_Z:
 		_mode = STAND if _mode == CRAWL else CRAWL
+	elif k.keycode == KEY_X:
+		_mode = STAND if _mode == PRONE else PRONE
 	elif k.keycode == KEY_SPACE:
 		_jump_pressed = true
 		_space_jumps += 1
@@ -638,7 +642,7 @@ func _bake() -> bool:
 	if not tops.is_empty():
 		tops.sort()
 		_run_speed = tops[tops.size() / 2]
-	_mode_speed = [_walk_speed, 0.0, 0.0]
+	_mode_speed = [_walk_speed, 0.0, 0.0, 0.0]
 	var modes := str(_mm.vmcall("mm_modes"))
 	for line in modes.split("\n", false):
 		var w := line.split(" ")
@@ -646,6 +650,8 @@ func _bake() -> bool:
 			_mode_speed[CROUCH] = float(w[2])
 		elif w[0] == "crawl":
 			_mode_speed[CRAWL] = float(w[2])
+		elif w[0] == "prone":
+			_mode_speed[PRONE] = float(w[2])
 	print(
 		(
 			"MOVE-SPEEDS walk=%.2f run=%.2f crouch=%.2f crawl=%.2f m/s | %s"
@@ -1200,7 +1206,7 @@ func _process(delta: float) -> void:
 	# Scene to SOMA: undo the rig's turn and scale.
 	var soma_v := want.rotated(Vector3.UP, -_phi) / _scale
 	_node.velocity = Vector2(soma_v.x, soma_v.z)
-	_node.mode = _mode
+	_node.mode = MM_PRONE if _mode == PRONE else _mode  # mm.elf's mode numbers: prone is 6
 	_node.jump = _jump_pressed
 	_jump_pressed = false
 	# MotionMatchNode steps mm.elf and Godot blends the clips it picks.
@@ -1337,7 +1343,7 @@ func _run_test() -> void:
 			["approach", Vector2(0, 1), true, 60.0, 0.0, STAND, false],
 			["duck", Vector2(0, 1), false, 20.0, 0.0, CROUCH, false],
 			["stand_up", Vector2(0, 1), false, 10.0, 0.0, STAND, false],
-			["crawl", Vector2(0, 1), false, 20.0, 0.0, CRAWL, false],
+			["crawl", Vector2(0, 1), false, 20.0, 0.0, PRONE if OS.get_environment("MOVE_CRAWL") == "prone" else CRAWL, false],
 			["to_gap", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
 			["jump", Vector2(0, 1), true, 10.0, 0.0, STAND, true],
 			["finish", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
@@ -1422,7 +1428,7 @@ func _run_test() -> void:
 				p0 = _last_world
 			else:
 				kind_all += dt
-				kind_ok += dt if _kind == step[5] else 0.0
+				kind_ok += dt if _kind == step[5] or (step[5] == PRONE and _kind == MM_PRONE) else 0.0
 				var f := _hips_forward()
 				faces.append(Vector2(f.x, f.z).normalized() * dt)
 				face_at.append([t, str(_keys[_clip])])
