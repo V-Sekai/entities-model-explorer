@@ -52,7 +52,6 @@ const CARD_ROWS := [
 	["keys", ["C"], "C or pad B", "Crouch"],
 	["keys", ["Z"], "Z or pad Y", "Crawl"],
 	["keys", ["Space"], "Space or A", "Jump"],
-	["keys", ["Shift", "G"], "Shift+G", "Metric grid"],
 	["keys", ["O"], "O", "Obstacle course"],
 ]
 # Short lines: one long line is wider than a 1280 px window and the card cuts it off.
@@ -115,7 +114,6 @@ var _walk_after_rig := false
 var _keys_testing := false
 var _space_jumps := 0
 var _trace := OS.get_environment("MOVE_TRACE") != ""
-var grid: MetricGrid
 var course: ObstacleCourse
 # --orbit-video: the view circles the model at ORBIT_DEG_S while the walk keeps the input frame
 # of the camera it started with, so the walk goes where the test asks and only the view moves.
@@ -130,9 +128,6 @@ var _orbit_a := 0.0
 func _ready() -> void:
 	_test = "--move-quit" in OS.get_cmdline_user_args()
 	_orbit = "--orbit-video" in OS.get_cmdline_user_args()
-	grid = MetricGrid.new()
-	grid.name = "MetricGrid"
-	get_parent().add_child.call_deferred(grid)
 	course = ObstacleCourse.new()
 	course.name = "ObstacleCourse"
 	get_parent().add_child.call_deferred(course)
@@ -1111,14 +1106,6 @@ func _begin() -> void:
 	if course:
 		var vc := _view_cam()
 		course.place(_origin, -vc.global_transform.basis.z if vc else Vector3(0, 0, -1), _scale)
-	if grid:
-		grid.set_origin(_origin)
-		print(
-			(
-				"GRID-FLOOR walk floor y=%.3f old grid y=%.3f lowest bone y=%.3f scale=%.3f"
-				% [_origin.y, grid._plane_y0, _lowest_bone_y(), _scale]
-			)
-		)
 	say(HELP)
 
 
@@ -1256,8 +1243,10 @@ func _process(delta: float) -> void:
 	if cc:
 		cc.position += char_scene - _last_world
 	_last_world = char_scene
-	if grid:
-		grid.track(char_scene, _hips_world())
+	# The floor's grid balls (GizmoPlane) fade around the character.
+	var balls := get_parent().get_node_or_null("GizmoPlane")
+	if balls and balls.has_method("set_focus"):
+		balls.set_focus(char_scene)
 	if _orbit_cam and cc:
 		_orbit_a += deg_to_rad(ORBIT_DEG_S) * dt
 		var c := cc.global_transform
@@ -1311,8 +1300,6 @@ func _run_test() -> void:
 	# tests; the run is then not judged as a whole.
 	var only := OS.get_environment("MOVE_STEPS")
 	var keys_ok := true if only != "" else await _key_test()
-	if grid:
-		grid.set_on(grid.visible or _orbit)
 	if _orbit:
 		_start_orbit()
 	var shots := OS.get_environment("MOVE_SHOT")

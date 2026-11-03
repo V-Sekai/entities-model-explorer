@@ -53,7 +53,7 @@ func set_focus(p: Vector3) -> void:
 	_focus_frame = Engine.get_process_frames()
 
 
-# A lattice point at o: the metric grid's zero.
+# A lattice point at o.
 func set_center(o: Vector3) -> void:
 	global_position = o
 
