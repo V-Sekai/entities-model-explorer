@@ -9,11 +9,14 @@ extends Control
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
 const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
-var ROW := 34.0  # 44 on a touchscreen: the least a fingertip can hit
+var ROW := 34.0  # a row's height: row_max, or less when the rows would not fit the window
+var _two := false  # two columns
+var row_max := 34.0  # 44 on a touchscreen: the least a fingertip can hit
 const PAD := 14.0
 const ICON_W := 40.0
 const MARGIN := 16.0
 const TOGGLE := 48.0
+const COL_W := 300.0  # one column of rows; the card has two when one would not fit the window
 # Rows whose key moves the model (the pieces fly apart, the joints swing, the body walks). They sit
 # together below a gap, away from the keys that only change how it looks, so a stray tap on a
 # wireframe or grid row cannot set the model in motion.
@@ -67,6 +70,7 @@ func _init() -> void:
 	for r in ROWS:
 		rows.append(r)
 	if DisplayServer.is_touchscreen_available():
+		row_max = 44.0
 		ROW = 44.0
 		rows.insert(0, ["touch", "pinch", "Pinch", "Zoom"])
 		rows.insert(0, ["touch", "two", "2 finger drag", "Pan"])
@@ -86,8 +90,15 @@ func add_row(row: Array) -> void:
 
 # Pinned to the bottom-right corner, MARGIN px in; the offsets follow the height as rows change.
 func _fit() -> void:
+	# The card must fit under the build label and above the ? button. Rows shrink to 26 px, and past that
+	# the rows go in two columns, rather than let the top of the card run off the window.
+	var free := get_viewport_rect().size.y - 2.0 * MARGIN - TOGGLE - 8.0 - 96.0
+	var fixed := PAD * 2 + 22 + 18
+	var gap := GAP if _motion_start() >= 0 else 0.0
+	_two = free - fixed - gap < 26.0 * rows.size()
+	ROW = clampf((free - fixed - (0.0 if _two else gap)) / _per_col(), 26.0, row_max)
 	custom_minimum_size = Vector2(
-		300, PAD * 2 + 22 + ROW * rows.size() + 18 + (GAP if _motion_start() >= 0 else 0.0)
+		COL_W * (2 if _two else 1), fixed + ROW * _per_col() + (0.0 if _two else gap)
 	)
 	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	offset_right = -MARGIN
@@ -101,6 +112,11 @@ func _ready() -> void:
 	visible = ViewerSettings.get_bool("controls_card", true)  # shown or hidden as it was left
 	mouse_filter = Control.MOUSE_FILTER_STOP  # taps on a row press its key; the rest of the screen is untouched
 	_fit()
+	get_viewport().size_changed.connect(
+		func():
+			_fit()
+			queue_redraw()
+	)
 	# A touch screen has no H key: a button that stays when the card is hidden.
 	toggle = Button.new()
 	toggle.text = "?"
@@ -135,9 +151,19 @@ func _motion_start() -> int:
 
 
 # Where row k starts, with the gap above the motion rows.
+func _per_col() -> int:
+	return ceili(rows.size() / 2.0) if _two else maxi(rows.size(), 1)
+
+
+# The x of the column row k is in.
+func _row_x(k: int) -> float:
+	return floorf(float(k) / _per_col()) * COL_W
+
+
 func _row_top(k: int) -> float:
 	var m := _motion_start()
-	return PAD + 22.0 + k * ROW + (GAP if m >= 0 and k >= m else 0.0)
+	var gap := GAP if (m >= 0 and k >= m and not _two) else 0.0
+	return PAD + 22.0 + (k % _per_col()) * ROW + gap
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -153,7 +179,12 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	var i := -1
 	for k in rows.size():
-		if at.y >= _row_top(k) and at.y < _row_top(k) + ROW:
+		if (
+			at.x >= _row_x(k)
+			and at.x < _row_x(k) + COL_W
+			and at.y >= _row_top(k)
+			and at.y < _row_top(k) + ROW
+		):
 			i = k
 	if i < 0:
 		return
@@ -187,10 +218,12 @@ func _draw() -> void:
 	draw_string(font, Vector2(PAD, PAD + 13), "CONTROLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, MUTE)
 	var y := PAD + 22.0
 	for r in rows:
-		y = _row_top(rows.find(r))
-		if rows.find(r) == flash:
-			draw_rect(Rect2(4, y, size.x - 8, ROW), Color(LIT, 0.55))
-		var c := Vector2(PAD + ICON_W * 0.5, y + ROW * 0.5)
+		var k := rows.find(r)
+		y = _row_top(k)
+		var xo := _row_x(k)
+		if k == flash:
+			draw_rect(Rect2(xo + 4, y, COL_W - 8, ROW), Color(LIT, 0.55))
+		var c := Vector2(xo + PAD + ICON_W * 0.5, y + ROW * 0.5)
 		match r[0]:
 			"mouse":
 				# Drawn 1.3x about its centre so the lit button reads at a glance.
@@ -205,7 +238,7 @@ func _draw() -> void:
 				_fingers(c, r[1])
 		draw_string(
 			font,
-			Vector2(PAD + ICON_W + 10, y + ROW * 0.5 + 5),
+			Vector2(xo + PAD + ICON_W + 10, y + ROW * 0.5 + 5),
 			r[2],
 			HORIZONTAL_ALIGNMENT_LEFT,
 			110,
@@ -214,7 +247,7 @@ func _draw() -> void:
 		)
 		draw_string(
 			font,
-			Vector2(PAD + ICON_W + 124, y + ROW * 0.5 + 5),
+			Vector2(xo + PAD + ICON_W + 124, y + ROW * 0.5 + 5),
 			r[3],
 			HORIZONTAL_ALIGNMENT_LEFT,
 			-1,
