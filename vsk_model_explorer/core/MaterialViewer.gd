@@ -54,11 +54,13 @@ func _create_property(root: TreeItem, pname: String, value):
 	if value is Texture2D or value is ImageTexture:
 		var img = value.get_image() as Image
 		img.resize(50, 50)
+		img.flip_y()   # previews match the UV viewer: up and down swapped
 		item.set_icon(1, ImageTexture.create_from_image(img))
 		item.set_metadata(1, value)
 	elif value is Image:
-		var img = value as Image
+		var img: Image = (value as Image).duplicate()   # a copy: the preview must not change the image itself
 		img.resize(50, 50)
+		img.flip_y()
 		item.set_icon(1, ImageTexture.create_from_image(img))
 		item.set_metadata(1, value)
 	elif value is Color:
