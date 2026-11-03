@@ -15,6 +15,10 @@ var _last_single_pos: Vector2 = Vector2.ZERO
 
 const MAX_SCALE = 20.0
 const MIN_SCALE = 0.05
+const FRAME_MARGIN = 2.2  # the camera sits this many half-diagonals from the middle of a new model
+const EYE_ABOVE_HEAD = 0.07  # metres: a VRM's head bone is at the neck; the eyes are about this far above it
+const START_YAW = 30.0  # degrees: a three-quarter view
+const START_PITCH = -12.0  # degrees: a little above, looking slightly down
 
 @export var UiNode: Control
 
@@ -51,7 +55,6 @@ func _on_reposition_camera(aabb: AABB):
 func _unhandled_input(event):
 	if not enable_cam_control:
 		return
-
 	# Mouse path (unchanged): right-drag orbits, middle-drag pans, scroll zooms.
 	if event is InputEventMouseMotion:
 		if event.button_mask == MOUSE_BUTTON_MASK_RIGHT:
@@ -167,8 +170,69 @@ func _translate(translate: Vector3):
 	self.translate(translate)
 
 
-func _on_root_gltf_is_loaded(_success, _gltf):
-	# Reset camera local scale
+func _on_root_gltf_is_loaded(success, model):
 	scale = Vector3.ONE
-	rotation.y = 0
-	CamRotHelper.rotation.x = 0
+	rotation = Vector3.ZERO
+	position = Vector3.ZERO
+	CamRotHelper.rotation = Vector3.ZERO
+	if not success or not (model is Node3D):
+		return
+	var box := _bounds(model)
+	if box.size.length() <= 0.0:
+		return
+	var eye := _eye_height(model, box)
+	if eye > 0.0:
+		# A person: start at the centre of gravity (the hips; the middle of the box when the file does not
+		# name them), go up to the character's eye level and stop, at once.
+		var cog := _cog(model, box)
+		position = Vector3(cog.x, eye, cog.z)
+		return
+	# Anything else: all of it in view from a three-quarter view a little above, turning about its middle.
+	position = box.get_center()
+	var distance: float = $CamRotHelper/Camera3D.position.z
+	scale = Vector3.ONE * clampf(box.size.length() * 0.5 * FRAME_MARGIN / distance, MIN_SCALE, MAX_SCALE)
+	rotation.y = deg_to_rad(START_YAW)
+	CamRotHelper.rotation.x = deg_to_rad(START_PITCH)
+
+
+# The centre of gravity in world space: the hips bone when the file names it, else the middle of the box.
+func _cog(model: Node3D, box: AABB) -> Vector3:
+	var hips := str(model.get_meta("hips_bone", ""))
+	if hips != "":
+		for node in model.find_children("*", "Skeleton3D", true, false):
+			var sk := node as Skeleton3D
+			var b := sk.find_bone(hips)
+			if b >= 0:
+				return sk.global_transform * sk.get_bone_global_pose(b).origin
+	return box.get_center()
+
+
+# Eye level in world metres if the model is a person, else 0. A VRM names its head bone: the eyes are
+# a hand above it. Any other upright skinned model of human height (0.9 to 2.4 m, taller than wide)
+# has them at 93% of its height.
+func _eye_height(model: Node3D, box: AABB) -> float:
+	var head := str(model.get_meta("head_bone", ""))
+	if head != "":
+		for node in model.find_children("*", "Skeleton3D", true, false):
+			var sk := node as Skeleton3D
+			var b := sk.find_bone(head)
+			if b >= 0:
+				return (sk.global_transform * sk.get_bone_global_pose(b).origin).y + EYE_ABOVE_HEAD
+	var human_sized := box.size.y >= 0.9 and box.size.y <= 2.4 and box.size.y > box.size.x and box.size.y > box.size.z
+	if human_sized and not model.find_children("*", "Skeleton3D", true, false).is_empty():
+		return box.position.y + 0.93 * box.size.y
+	return 0.0
+
+
+# The box round every visible mesh of a loaded model, in world space.
+func _bounds(model: Node3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null or not mi.visible or not mi.is_inside_tree():
+			continue
+		var b := mi.global_transform * mi.mesh.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	return box

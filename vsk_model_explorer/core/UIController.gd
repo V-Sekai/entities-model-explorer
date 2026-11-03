@@ -519,9 +519,9 @@ func _on_mesh_item_double_clicked(tree: Tree):
 	var meshItem: TreeItem = tree.get_selected()
 	var mesh: MeshInstance3D = meshItem.get_metadata(0)
 	if mesh != null:
-		var uvLines = MeshExt.draw_uv_texture(mesh.mesh)
-		if uvLines.size() > 0:
-			GlobalSignal.trigger_texture_viewer.emit(uvLines)
+		var view := MeshExt.uv_view(mesh)
+		if view["lines"].size() > 0:
+			GlobalSignal.trigger_texture_viewer.emit(view)
 
 		GlobalSignal.reposition_camera.emit(mesh.mesh.get_aabb())
 
@@ -674,17 +674,45 @@ func _on_mesh_clicked(
 		meshViewer = _card_popup(MeshInfoViewer.instantiate())
 		meshViewer.set_mesh(mesh)
 
-		var pos = event.position + Vector2(60, -100)
-		# Prevent window out of screen
-		var viewportSize = get_viewport().size / 2
-		if pos.x > viewportSize.x:
-			pos.x = viewportSize.x
-		if pos.y < 0:
-			pos.y = 0
-
-		meshViewer.position = pos
-
+		# Docked at a fixed spot, top right, not beside the pointer: it covers none of the model, a
+		# second click replaces its contents in place, and it blocks nothing (the camera still works
+		# anywhere outside it). The bottom right belongs to the controls card.
+		meshViewer.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		meshViewer.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		meshViewer.offset_left = -CardStyle.MARGIN
+		meshViewer.offset_right = -CardStyle.MARGIN
+		# Below the build label, which holds the top right corner.
+		var below := CardStyle.MARGIN
+		var owner_node = get_parent()
+		if owner_node != null and "version_card" in owner_node and owner_node.version_card != null:
+			below = owner_node.version_card.position.y + owner_node.version_card.size.y + 8.0
+		meshViewer.offset_top = below
+		meshViewer.offset_bottom = below
+		_make_room_for(meshViewer)
 		add_child.call_deferred(meshViewer)
+
+
+# The controls card holds the right column below the build label, where the mesh details dock: it steps
+# aside while the details show and comes back when they close (if it was showing).
+var _card_hidden_for_details := false
+
+
+func _make_room_for(details: Control) -> void:
+	var owner_node = get_parent()
+	if owner_node == null or not ("controls_card" in owner_node) or owner_node.controls_card == null:
+		return
+	var card: Control = owner_node.controls_card
+	if card.visible:
+		card.visible = false
+		_card_hidden_for_details = true
+	details.tree_exited.connect(
+		func():
+			if meshViewer != details and _card_hidden_for_details and is_instance_valid(card):
+				pass  # replaced by the next click: the new details keep the card hidden
+			elif _card_hidden_for_details and is_instance_valid(card):
+				card.visible = true
+				_card_hidden_for_details = false
+	)
 
 
 func _on_mesh_mouse_entered(mesh: MeshInstance3D):

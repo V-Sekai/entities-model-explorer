@@ -45,6 +45,6 @@ func _process(_delta):
 
 
 func _on_btn_viewuv_pressed():
-	var uvLines = MeshExt.draw_uv_texture(_mesh.mesh)
-	if uvLines.size() > 0:
-		GlobalSignal.trigger_texture_viewer.emit(uvLines)
+	var view := MeshExt.uv_view(_mesh)
+	if view["lines"].size() > 0:
+		GlobalSignal.trigger_texture_viewer.emit(view)

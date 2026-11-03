@@ -6,7 +6,8 @@ extends Node
 # stretched patch of skin can be traced to the joint that moved. The motion is computed for each
 # frame from the time; nothing is saved and no clip is added to the file. F again stops it and puts
 # the pose it started from back. The viewer's own animations pause while it plays.
-# The body is the hips and everything below them. The nodes above the hips (the skeleton's root, root
+# On a humanoid (a VRM file names its humanoid bones) only those bones move: hair, skirt, face and
+# helper joints stay still. The body is the hips and everything below them. The nodes above the hips (the skeleton's root, root
 # motion, the centre of gravity) are global nodes, not part of the body, and never move. A VRM file says
 # which bone is the hips; a file that does not keeps only its skeleton roots still.
 # It starts from a standing idle: when the model has an animation named like "idle", that
@@ -79,8 +80,11 @@ func _collect() -> void:
 	for node in _scene.find_children("*", "Skeleton3D", true, false):
 		var sk := node as Skeleton3D
 		var global := _global_bones(sk)
+		var humanoid := _humanoid_bones()
 		for b in sk.get_bone_count():
 			if sk.get_bone_parent(b) < 0 or global.has(b):
+				continue
+			if not humanoid.is_empty() and not humanoid.has(sk.get_bone_name(b)):
 				continue
 			var axis := Vector3(rng.randfn(), rng.randfn(), rng.randfn())
 			if axis.length() < 1.0e-6:
@@ -97,6 +101,11 @@ func _collect() -> void:
 					phase
 				]
 			)
+
+
+# The humanoid bone names the file gave, or empty when it gave none (then every joint moves).
+func _humanoid_bones() -> PackedStringArray:
+	return _scene.get_meta("humanoid_bones", PackedStringArray()) if _scene != null and _scene.has_meta("humanoid_bones") else PackedStringArray()
 
 
 # The bones above the hips: the nodes that carry the body (root, root motion, centre of gravity).
@@ -228,6 +237,12 @@ func _run_test() -> void:
 	_apply()
 	var moved := _largest_turn()
 	var away := _joints_away()
+	var other := 0   # joints that are not humanoid on a humanoid: none may be in the list
+	var humanoid := _humanoid_bones()
+	if not humanoid.is_empty():
+		for j in _joints:
+			if not humanoid.has(j[0].get_bone_name(j[1])):
+				other += 1
 	var above := 0   # joints that are ancestors of the hips: none may be in the list
 	for node in _scene.find_children("*", "Skeleton3D", true, false):
 		var g := _global_bones(node as Skeleton3D)
@@ -241,10 +256,10 @@ func _run_test() -> void:
 	var back := _largest_turn()
 	print(
 		(
-			"FLEX-RESULT joints=%d length=%d global_moved=%d joints_away=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
-			% [_joints.size(), int(LENGTH), above, away, moved, back, playing, shown]
+			"FLEX-RESULT joints=%d length=%d non_humanoid=%d global_moved=%d joints_away=%d moved_deg=%.2f after_end_deg=%.4f playing=%s label=%s"
+			% [_joints.size(), int(LENGTH), other, above, away, moved, back, playing, shown]
 		)
 	)
-	var ok := above == 0 and away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
+	var ok := other == 0 and above == 0 and away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
 	print("FLEX-OK" if ok else "FLEX-FAIL")
 	get_tree().quit(0 if ok else 1)
