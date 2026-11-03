@@ -86,7 +86,8 @@ var _jump_pressed := false
 var _pad_prev := {}
 var _origin := Vector3.ZERO
 var _cam_before := {}  # the camera as it was before the walk: pos, yaw, scale, pitch
-const WALK_CAM_BEHIND := 3.0  # metres behind the character in walk mode
+const WALK_CAM_DISTANCE := 4.5  # metres from the middle of the body in walk mode
+const WALK_CAM_PITCH := -40.0  # degrees: looking down on the character
 var _clip := -1
 var _last_world := Vector3.ZERO
 # How far the course's walls have held the model back from where root motion put it.
@@ -1083,9 +1084,10 @@ func _begin() -> void:
 	_jump_pressed = false
 	_clear_target()
 	_origin = _scene.position
-	# Third person, from behind, through the character's eyes: the camera sits WALK_CAM_BEHIND metres behind
-	# it at its eye level, looking the way it faces. Every floor point is then below the horizon, so a click
-	# or tap can still reach it. stop() puts the camera back as it was.
+	# Third person, high and behind, looking down at the character like a Blue Archive field: the camera
+	# sits WALK_CAM_DISTANCE metres from the middle of the body, pitched WALK_CAM_PITCH degrees down, behind
+	# the way the character faces. The floor fills the view, so a click or tap reaches it easily. stop() puts
+	# the camera back as it was.
 	var cc0 := get_parent().get_node_or_null("CamController") as Node3D
 	var rot := get_parent().get_node_or_null("CamController/CamRotHelper") as Node3D
 	var eye_cam := get_parent().get_node_or_null("CamController/CamRotHelper/Camera3D") as Node3D
@@ -1097,13 +1099,11 @@ func _begin() -> void:
 		facing.y = 0.0
 		if facing.length() > 0.01:
 			cc0.rotation.y = atan2(-facing.x, -facing.z)  # the camera looks along the character's facing
-		rot.rotation.x = 0.0
-		cc0.scale = Vector3.ONE * (WALK_CAM_BEHIND / eye_cam.position.z)
-		var eye: float = (
-			cc0._eye_height(_scene, cc0._bounds(_scene)) if cc0.has_method("_eye_height") else 0.0
-		)
-		if eye > 0.0:
-			cc0.position = Vector3(_origin.x, eye, _origin.z)
+		rot.rotation.x = deg_to_rad(WALK_CAM_PITCH)
+		cc0.scale = Vector3.ONE * (WALK_CAM_DISTANCE / eye_cam.position.z)
+		if cc0.has_method("_cog"):
+			var middle: Vector3 = cc0._cog(_scene, cc0._bounds(_scene))  # the hips: the middle of the body
+			cc0.position = Vector3(_origin.x, middle.y, _origin.z)
 	on = true
 	add_to_group("walk_mode")
 	_last_world = _origin
