@@ -28,9 +28,9 @@ var _joints: Array = []
 var _scene: Node
 var _paused: Array = []
 var _label: Label
-var idle_used := ""   # the animation the swing started from, or "" for the rest pose
-var _slot := 1.0   # seconds each joint has
-var _last := -1    # the joint moved last frame
+var idle_used := ""  # the animation the swing started from, or "" for the rest pose
+var _slot := 1.0  # seconds each joint has
+var _last := -1  # the joint moved last frame
 var _test := false
 
 
@@ -105,13 +105,19 @@ func _collect() -> void:
 
 # The humanoid bone names the file gave, or empty when it gave none (then every joint moves).
 func _humanoid_bones() -> PackedStringArray:
-	return _scene.get_meta("humanoid_bones", PackedStringArray()) if _scene != null and _scene.has_meta("humanoid_bones") else PackedStringArray()
+	return (
+		_scene.get_meta("humanoid_bones", PackedStringArray())
+		if _scene != null and _scene.has_meta("humanoid_bones")
+		else PackedStringArray()
+	)
 
 
 # The bones above the hips: the nodes that carry the body (root, root motion, centre of gravity).
 func _global_bones(sk: Skeleton3D) -> Dictionary:
 	var out := {}
-	var hips := sk.find_bone(str(_scene.get_meta("hips_bone", ""))) if _scene.has_meta("hips_bone") else -1
+	var hips := (
+		sk.find_bone(str(_scene.get_meta("hips_bone", ""))) if _scene.has_meta("hips_bone") else -1
+	)
 	if hips < 0:
 		return out
 	var b := sk.get_bone_parent(hips)
@@ -186,11 +192,11 @@ func _apply() -> void:
 	if _last >= 0 and _last != i:
 		var old: Array = _joints[_last]
 		if is_instance_valid(old[0]):
-			old[0].set_bone_pose_rotation(old[1], old[2])   # the joint that had its turn goes back to rest
+			old[0].set_bone_pose_rotation(old[1], old[2])  # the joint that had its turn goes back to rest
 	var j: Array = _joints[i]
 	var sk: Skeleton3D = j[0]
 	if is_instance_valid(sk):
-		var u := time / _slot - i   # 0 to 1 across this joint's turn
+		var u := time / _slot - i  # 0 to 1 across this joint's turn
 		sk.set_bone_pose_rotation(j[1], j[2] * Quaternion(j[3], deg_to_rad(DEGREES) * sin(TAU * u)))
 	_last = i
 	var t := int(time)
@@ -237,13 +243,13 @@ func _run_test() -> void:
 	_apply()
 	var moved := _largest_turn()
 	var away := _joints_away()
-	var other := 0   # joints that are not humanoid on a humanoid: none may be in the list
+	var other := 0  # joints that are not humanoid on a humanoid: none may be in the list
 	var humanoid := _humanoid_bones()
 	if not humanoid.is_empty():
 		for j in _joints:
 			if not humanoid.has(j[0].get_bone_name(j[1])):
 				other += 1
-	var above := 0   # joints that are ancestors of the hips: none may be in the list
+	var above := 0  # joints that are ancestors of the hips: none may be in the list
 	for node in _scene.find_children("*", "Skeleton3D", true, false):
 		var g := _global_bones(node as Skeleton3D)
 		for j in _joints:
@@ -260,6 +266,14 @@ func _run_test() -> void:
 			% [_joints.size(), int(LENGTH), other, above, away, moved, back, playing, shown]
 		)
 	)
-	var ok := other == 0 and above == 0 and away == 1 and moved > 1.0 and moved <= DEGREES + 0.01 and back < 0.001 and not playing
+	var ok := (
+		other == 0
+		and above == 0
+		and away == 1
+		and moved > 1.0
+		and moved <= DEGREES + 0.01
+		and back < 0.001
+		and not playing
+	)
 	print("FLEX-OK" if ok else "FLEX-FAIL")
 	get_tree().quit(0 if ok else 1)

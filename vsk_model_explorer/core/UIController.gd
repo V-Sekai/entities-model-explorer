@@ -80,7 +80,9 @@ func _card_popup(p: Control) -> Control:
 		CardStyle.heading(c)
 	for b in head.find_children("*", "Button", true, false):
 		b.text = "Esc"
-		b.custom_minimum_size = Vector2(44, 44) if DisplayServer.is_touchscreen_available() else Vector2.ZERO  # a fingertip needs 44 px
+		b.custom_minimum_size = (
+			Vector2(44, 44) if DisplayServer.is_touchscreen_available() else Vector2.ZERO
+		)  # a fingertip needs 44 px
 	return p
 
 
@@ -202,7 +204,9 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 		meshInfoTree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 		meshInfoTree.item_selected.connect(_on_mesh_item_selected.bind(meshInfoTree))
-		meshInfoTree.item_mouse_selected.connect(_on_row_clicked.bind(_on_mesh_item_clicked, meshInfoTree))
+		meshInfoTree.item_mouse_selected.connect(
+			_on_row_clicked.bind(_on_mesh_item_clicked, meshInfoTree)
+		)
 		meshInfoTree.item_activated.connect(_on_mesh_item_double_clicked.bind(meshInfoTree))
 
 		meshInfoTree.gui_input.connect(_on_scroll_input.bind(meshInfoTree))
@@ -315,7 +319,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 
 						img = mat.albedo_texture.get_image()
 						img.resize(32, 32)
-						img.flip_y()   # previews match the UV viewer: up and down swapped
+						img.flip_y()  # previews match the UV viewer: up and down swapped
 					else:
 						img = Image.create(32, 32, false, Image.FORMAT_RGBA8)
 						img.fill(mat.albedo_color)
@@ -340,7 +344,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 							matItem.set_text(0, parameter_name.trim_prefix("_").capitalize())
 							img = mat.albedo_texture.get_image()
 							img.resize(32, 32)
-							img.flip_y()   # previews match the UV viewer: up and down swapped
+							img.flip_y()  # previews match the UV viewer: up and down swapped
 						elif parameter is Image:
 							img = Image.create(32, 32, false, Image.FORMAT_RGBA8)
 							img.fill(parameter)
@@ -372,7 +376,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 				if tex is Texture2D:
 					var img = (tex as Texture2D).get_image()
 					img.resize(50, 50)
-					img.flip_y()   # previews match the UV viewer: up and down swapped
+					img.flip_y()  # previews match the UV viewer: up and down swapped
 
 					var texItem: TreeItem = textureInfoTree.create_item(texParent)
 					texItem.set_icon(0, ImageTexture.create_from_image(img))
@@ -389,9 +393,9 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 					)
 					texItem.set_metadata(0, tex)
 				elif tex is Image:
-					var img: Image = (tex as Image).duplicate()   # a copy: the preview must not change the image itself
+					var img: Image = (tex as Image).duplicate()  # a copy: the preview must not change the image itself
 					img.resize(50, 50)
-					img.flip_y()   # previews match the UV viewer: up and down swapped
+					img.flip_y()  # previews match the UV viewer: up and down swapped
 
 					var texItem: TreeItem = textureInfoTree.create_item(texParent)
 					texItem.set_icon(0, ImageTexture.create_from_image(img))
@@ -564,7 +568,7 @@ func _on_material_item_double_clicked(tree: Tree):
 	var matItem: TreeItem = tree.get_selected()
 	var mat: Material = matItem.get_metadata(0)
 	if mat != null and mat is Material:
-		if matViewer != null and is_instance_valid(matViewer):   # a closed viewer is a freed object
+		if matViewer != null and is_instance_valid(matViewer):  # a closed viewer is a freed object
 			matViewer.queue_free()
 
 		matViewer = _card_popup(MaterialViewer.instantiate())
@@ -572,8 +576,13 @@ func _on_material_item_double_clicked(tree: Tree):
 		# The scene file placed it at (314, 772), below the bottom of a 720 px window. It sits at a fixed
 		# spot instead: top left of the free area, right of the information panel.
 		var info := get_node_or_null("InfoPanel") as Control
-		var left := (info.get_global_rect().end.x if info != null and info.visible else 0.0) + CardStyle.MARGIN
-		matViewer.custom_minimum_size = Vector2(373, minf(473.0, get_viewport().size.y - 2.0 * CardStyle.MARGIN))   # the scene's own size, kept on screen
+		var left := (
+			(info.get_global_rect().end.x if info != null and info.visible else 0.0)
+			+ CardStyle.MARGIN
+		)
+		matViewer.custom_minimum_size = Vector2(
+			373, minf(473.0, get_viewport().size.y - 2.0 * CardStyle.MARGIN)
+		)  # the scene's own size, kept on screen
 		matViewer.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		matViewer.offset_left = left
 		matViewer.offset_right = left
@@ -743,7 +752,11 @@ var _card_hidden_for_details := false
 
 func _make_room_for(details: Control) -> void:
 	var owner_node = get_parent()
-	if owner_node == null or not ("controls_card" in owner_node) or owner_node.controls_card == null:
+	if (
+		owner_node == null
+		or not ("controls_card" in owner_node)
+		or owner_node.controls_card == null
+	):
 		return
 	var card: Control = owner_node.controls_card
 	if card.visible:

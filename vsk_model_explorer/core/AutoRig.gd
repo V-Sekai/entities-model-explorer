@@ -356,7 +356,12 @@ func _drive_worker(start_mesh: String) -> Dictionary:
 		if _rd == null:
 			return _err("this renderer gives no local RenderingDevice")
 		_sb.vmcall("skintokens_attach", _rd, 4096)
-		_sb.vmcall("skintokens_start", weights_dir(), start_mesh, "beams=1 temperature=0 GGML_RD_MAX_BUFFER_MB=128")
+		_sb.vmcall(
+			"skintokens_start",
+			weights_dir(),
+			start_mesh,
+			"beams=1 temperature=0 GGML_RD_MAX_BUFFER_MB=128"
+		)
 	var feed := PackedByteArray()
 	while true:
 		var r = _sb.vmcall("skintokens_pump", feed)

@@ -27,6 +27,6 @@ static func set_bool(key: String, value: bool) -> void:
 	if not enabled():
 		return
 	var cfg := ConfigFile.new()
-	cfg.load(PATH)   # keep the other toggles; a missing file is fine
+	cfg.load(PATH)  # keep the other toggles; a missing file is fine
 	cfg.set_value(SECTION, key, value)
 	cfg.save(PATH)
