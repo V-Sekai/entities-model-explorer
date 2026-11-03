@@ -43,6 +43,11 @@ EOF
 ( cd "$proj" && "$engine" --headless --path . --import >/dev/null 2>&1 || true )
 cp "$engine" "$app/Contents/Resources/godot"
 cp "$here/LICENSE" "$app/Contents/Resources/LICENSE-model-explorer.txt"
+# The MIT, BSD and Apache-2.0 parts need their notices to ship with the binaries, the NVIDIA and Meta licences a NOTICE:
+# the walk-mode set of tools/licences/licgen.py (no weights), beside the app (before signing) and at the top of the volume.
+python3 "$here/tools/licences/licgen.py" "$work/notices" >/dev/null
+for f in LICENSE.md NOTICE CITATION.cff; do cp "$work/notices/walk-mode/$f" "$app/Contents/Resources/$f"; done
+mkdir -p "$work/dmg"
 cat > "$app/Contents/MacOS/Model Explorer" <<'E'
 #!/bin/sh
 res="$(cd "$(dirname "$0")/../Resources" && pwd)"
@@ -94,6 +99,7 @@ Model Explorer $sha. Drag Model Explorer to Applications and open it.
 Drop a .glb, .gltf, .vrm or .usd on the window. R auto-rigs a .glb where the rig weights are installed.
 This is $( [ "$sign_id" = "-" ] && echo "an unsigned build: open it with right-click, Open." || echo "signed by $sign_id." )
 EOF
+for f in LICENSE.md NOTICE CITATION.cff; do cp "$work/notices/walk-mode/$f" "$work/dmg/$f"; done
 ln -s /Applications "$work/dmg/Applications"
 suffix=""; [ "$sign_id" = "-" ] && suffix="-unsigned"
 dmg="$out/Model-Explorer-0.1.0-$label$suffix.dmg"
