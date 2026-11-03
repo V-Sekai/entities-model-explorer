@@ -5,6 +5,7 @@ extends RefCounted
 #   grid_hidden     G          off by default (the grid shows)
 #   controls_card   H, ?       on by default
 #   color_chart     C          off by default
+#   mcp             the MCP slider; unset until it is used, so the server keeps its own default
 # Start with `-- --fresh-settings` to ignore the file and not write it (tests do).
 const PATH := "user://viewer_settings.cfg"
 const SECTION := "toggles"
@@ -21,6 +22,13 @@ static func get_bool(key: String, default: bool) -> bool:
 	if cfg.load(PATH) != OK:
 		return default
 	return bool(cfg.get_value(SECTION, key, default))
+
+
+static func has_key(key: String) -> bool:
+	if not enabled():
+		return false
+	var cfg := ConfigFile.new()
+	return cfg.load(PATH) == OK and cfg.has_section_key(SECTION, key)
 
 
 static func set_bool(key: String, value: bool) -> void:

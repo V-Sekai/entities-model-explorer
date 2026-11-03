@@ -52,7 +52,6 @@ const CARD_ROWS := [
 	["keys", ["C"], "C or pad B", "Crouch"],
 	["keys", ["Z"], "Z or pad Y", "Crawl"],
 	["keys", ["Space"], "Space or A", "Jump"],
-	["keys", ["Shift", "G"], "Shift+G", "Metric grid"],
 	["keys", ["O"], "O", "Obstacle course"],
 ]
 # Short lines: one long line is wider than a 1280 px window and the card cuts it off.
@@ -85,6 +84,9 @@ var _mode := STAND
 var _jump_pressed := false
 var _pad_prev := {}
 var _origin := Vector3.ZERO
+var _cam_before := {}  # the camera as it was before the walk: pos, yaw, scale, pitch
+const WALK_CAM_DISTANCE := 4.5  # metres from the middle of the body in walk mode
+const WALK_CAM_PITCH := -40.0  # degrees: looking down on the character
 var _clip := -1
 var _last_world := Vector3.ZERO
 # How far the course's walls have held the model back from where root motion put it.
@@ -112,7 +114,6 @@ var _walk_after_rig := false
 var _keys_testing := false
 var _space_jumps := 0
 var _trace := OS.get_environment("MOVE_TRACE") != ""
-var grid: MetricGrid
 var course: ObstacleCourse
 # --orbit-video: the view circles the model at ORBIT_DEG_S while the walk keeps the input frame
 # of the camera it started with, so the walk goes where the test asks and only the view moves.
@@ -127,9 +128,6 @@ var _orbit_a := 0.0
 func _ready() -> void:
 	_test = "--move-quit" in OS.get_cmdline_user_args()
 	_orbit = "--orbit-video" in OS.get_cmdline_user_args()
-	grid = MetricGrid.new()
-	grid.name = "MetricGrid"
-	get_parent().add_child.call_deferred(grid)
 	course = ObstacleCourse.new()
 	course.name = "ObstacleCourse"
 	get_parent().add_child.call_deferred(course)
@@ -402,6 +400,7 @@ func stop() -> void:
 	on = false
 	_clear_target()
 	remove_from_group("walk_mode")
+	_restore_camera()
 	if is_instance_valid(_tree):
 		_tree.active = false
 	if _player:
@@ -414,6 +413,20 @@ func stop() -> void:
 		elif _skeleton:
 			_stay()
 	say("")
+
+
+# The camera back where it was before the walk, moved by how far the character walked.
+func _restore_camera() -> void:
+	if _cam_before.is_empty():
+		return
+	var cc := get_parent().get_node_or_null("CamController") as Node3D
+	var rot := get_parent().get_node_or_null("CamController/CamRotHelper") as Node3D
+	if cc and rot:
+		cc.rotation.y = _cam_before["yaw"]
+		cc.scale = _cam_before["scale"]
+		rot.rotation.x = _cam_before["pitch"]
+		cc.position = _cam_before["pos"] + (cc.position - _cam_before["pos"]) * Vector3(1, 0, 1)  # keep where it walked, on the floor plane
+	_cam_before = {}
 
 
 # M off: the model stays where the walk left it, facing the way it faced. The pose goes back to
@@ -498,12 +511,17 @@ func _all_clips_at_once(
 	var label := "Move: putting %d clips on the rig" % keys.size()
 	say(label)
 	rig.vmcall("skintokens_motions_begin", soma.names, soma.parents, 30.0)
-	for k in keys:
+	for i in keys.size():
+		var k := keys[i]
 		var xf := FileAccess.get_file_as_bytes(DIR.path_join(k + ".f32")).to_float32_array()
 		var added := str(rig.vmcall("skintokens_motions_add", PREFIX + k, xf))
 		if not added.begins_with("OK"):
 			_fail(added)
 			return PackedByteArray()
+		# Each add is a blocking call: say how far it is and let the window draw, or it looks stuck.
+		say("%s (clip %d of %d)" % [label, i + 1, keys.size()])
+		if i % 4 == 3:
+			await get_tree().process_frame
 	var started := str(rig.vmcall("skintokens_motions_start", source))
 	if not started.begins_with("STARTED"):
 		_fail(started)
@@ -1066,11 +1084,26 @@ func _begin() -> void:
 	_jump_pressed = false
 	_clear_target()
 	_origin = _scene.position
-	# Look down at the floor around the model so a click or tap can reach it. The camera starts
-	# level at the model's feet, where every floor point is on the horizon line.
+	# Third person, high and behind, looking down at the character like a Blue Archive field: the camera
+	# sits WALK_CAM_DISTANCE metres from the middle of the body, pitched WALK_CAM_PITCH degrees down, behind
+	# the way the character faces. The floor fills the view, so a click or tap reaches it easily. stop() puts
+	# the camera back as it was.
+	var cc0 := get_parent().get_node_or_null("CamController") as Node3D
 	var rot := get_parent().get_node_or_null("CamController/CamRotHelper") as Node3D
-	if rot and rot.rotation.x > deg_to_rad(-10.0):
-		rot.rotation.x = deg_to_rad(-25.0)
+	var eye_cam := get_parent().get_node_or_null("CamController/CamRotHelper/Camera3D") as Node3D
+	if cc0 and rot and eye_cam:
+		_cam_before = {
+			"pos": cc0.position, "yaw": cc0.rotation.y, "scale": cc0.scale, "pitch": rot.rotation.x
+		}
+		var facing := _scene.global_transform.basis.z  # a model faces +Z
+		facing.y = 0.0
+		if facing.length() > 0.01:
+			cc0.rotation.y = atan2(-facing.x, -facing.z)  # the camera looks along the character's facing
+		rot.rotation.x = deg_to_rad(WALK_CAM_PITCH)
+		cc0.scale = Vector3.ONE * (WALK_CAM_DISTANCE / eye_cam.position.z)
+		if cc0.has_method("_cog"):
+			var middle: Vector3 = cc0._cog(_scene, cc0._bounds(_scene))  # the hips: the middle of the body
+			cc0.position = Vector3(_origin.x, middle.y, _origin.z)
 	on = true
 	add_to_group("walk_mode")
 	_last_world = _origin
@@ -1078,14 +1111,6 @@ func _begin() -> void:
 	if course:
 		var vc := _view_cam()
 		course.place(_origin, -vc.global_transform.basis.z if vc else Vector3(0, 0, -1), _scale)
-	if grid:
-		grid.set_origin(_origin)
-		print(
-			(
-				"GRID-FLOOR walk floor y=%.3f old grid y=%.3f lowest bone y=%.3f scale=%.3f"
-				% [_origin.y, grid._plane_y0, _lowest_bone_y(), _scale]
-			)
-		)
 	say(HELP)
 
 
@@ -1223,8 +1248,10 @@ func _process(delta: float) -> void:
 	if cc:
 		cc.position += char_scene - _last_world
 	_last_world = char_scene
-	if grid:
-		grid.track(char_scene, _hips_world())
+	# The floor's grid balls (GizmoPlane) fade around the character.
+	var balls := get_parent().get_node_or_null("GizmoPlane")
+	if balls and balls.has_method("set_focus"):
+		balls.set_focus(char_scene)
 	if _orbit_cam and cc:
 		_orbit_a += deg_to_rad(ORBIT_DEG_S) * dt
 		var c := cc.global_transform
@@ -1278,8 +1305,6 @@ func _run_test() -> void:
 	# tests; the run is then not judged as a whole.
 	var only := OS.get_environment("MOVE_STEPS")
 	var keys_ok := true if only != "" else await _key_test()
-	if grid:
-		grid.set_on(grid.visible or _orbit)
 	if _orbit:
 		_start_orbit()
 	var shots := OS.get_environment("MOVE_SHOT")

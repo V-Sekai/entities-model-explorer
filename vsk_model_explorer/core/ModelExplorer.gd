@@ -9,6 +9,8 @@ const Worker = preload("res://vsk_model_explorer/core/Worker.gd")
 var worker: Worker
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
+const WalkBar = preload("res://vsk_model_explorer/core/WalkBar.gd")
+const McpSwitch = preload("res://vsk_model_explorer/core/McpSwitch.gd")
 const BuildConsts = preload("res://addons/vsk_version/build_constants.gd")
 const gltf_vrm_extension_const = preload("res://addons/vrm/vrm_extension.gd")
 const ControlsCard = preload("res://vsk_model_explorer/core/ControlsCard.gd")
@@ -98,6 +100,9 @@ func _ready():
 		move.moves_made.connect(_load_file)
 		for row in MotionMatch.CARD_ROWS:
 			add_control_row(row)
+		var walk_bar := WalkBar.new()  # Walk, Course and Grid buttons: none of it needs a keyboard
+		walk_bar.move = move
+		controls_card.get_parent().add_child(walk_bar)
 	else:
 		move.free()
 		move = null
@@ -421,6 +426,7 @@ func _ensure_controls_card() -> void:
 	add_child(layer)
 	controls_card = ControlsCard.new()
 	layer.add_child(controls_card)
+	layer.add_child(McpSwitch.new())  # the MCP server's slider, beside the ? button
 	_add_version_label(layer)
 
 

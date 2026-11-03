@@ -78,6 +78,34 @@ func _configure() -> void:
 		protocol.providers.append(p)
 
 
+var _port := 0  # the port the server last listened on
+
+
+## Whether the runtime server is accepting connections now.
+func is_listening() -> bool:
+	return _http != null and _http.is_listening()
+
+
+## The URL a client connects to while it listens, else "".
+func url() -> String:
+	return "http://%s:%d/mcp" % [HOST, _port] if is_listening() else ""
+
+
+## Switch the server on or off while the game runs (the viewer's slider). Returns whether it listens
+## afterwards: off on the web, and off when the port is taken.
+func set_listening(on: bool) -> bool:
+	if OS.has_feature("web"):
+		return false
+	if on:
+		if _http == null:
+			_start_http()
+		elif not _http.is_listening():
+			_http.start(_port, HOST)
+	elif _http != null:
+		_http.stop()
+	return is_listening()
+
+
 func _start_http() -> void:
 	var port := _resolve_port()
 	if port < 0:
@@ -88,6 +116,7 @@ func _start_http() -> void:
 		return
 	_http = MCPHttpServerLib.new()
 	_http.protocol = protocol
+	_port = port
 	if _http.start(port, HOST) == OK:
 		printerr("[godot_mcp] RUNTIME MCP on http://%s:%d/mcp (and /sse)" % [HOST, port])
 	else:
