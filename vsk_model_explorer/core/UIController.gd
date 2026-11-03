@@ -192,6 +192,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 		meshInfoTree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 		meshInfoTree.item_selected.connect(_on_mesh_item_selected.bind(meshInfoTree))
+		meshInfoTree.item_mouse_selected.connect(_on_row_clicked.bind(_on_mesh_item_clicked, meshInfoTree))
 		meshInfoTree.item_activated.connect(_on_mesh_item_double_clicked.bind(meshInfoTree))
 
 		meshInfoTree.gui_input.connect(_on_scroll_input.bind(meshInfoTree))
@@ -282,8 +283,8 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 			materialInfoTree.mouse_filter = Control.MOUSE_FILTER_PASS
 			materialInfoTree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-			materialInfoTree.item_activated.connect(
-				_on_material_item_double_clicked.bind(materialInfoTree)
+			materialInfoTree.item_mouse_selected.connect(
+				_on_row_clicked.bind(_on_material_item_double_clicked, materialInfoTree)
 			)
 
 			materialInfoTree.gui_input.connect(_on_scroll_input.bind(materialInfoTree))
@@ -345,7 +346,9 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 			textureInfoTree.mouse_filter = Control.MOUSE_FILTER_PASS
 			textureInfoTree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-			textureInfoTree.item_activated.connect(_on_texture_double_clicked.bind(textureInfoTree))
+			textureInfoTree.item_mouse_selected.connect(
+				_on_row_clicked.bind(_on_texture_double_clicked, textureInfoTree)
+			)
 
 			textureInfoTree.gui_input.connect(_on_scroll_input.bind(textureInfoTree))
 
@@ -417,8 +420,8 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 			animationTree.mouse_filter = Control.MOUSE_FILTER_PASS
 			animationTree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-			animationTree.item_activated.connect(
-				_on_animation_item_double_clicked.bind(animationTree)
+			animationTree.item_mouse_selected.connect(
+				_on_row_clicked.bind(_on_animation_item_double_clicked, animationTree)
 			)
 
 			animationTree.gui_input.connect(_on_scroll_input.bind(animationTree))
@@ -459,7 +462,9 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 			motionTree.tooltip_text = "Double-click a clip to make it for this rig."
 			_card_list(motionTree, "Motion (%d)" % clips.size())
 			motionTree.set_column_title(1, "")
-			motionTree.item_activated.connect(_on_motion_item_double_clicked.bind(motionTree))
+			motionTree.item_mouse_selected.connect(
+				_on_row_clicked.bind(_on_motion_item_double_clicked, motionTree)
+			)
 			motionTree.gui_input.connect(_on_scroll_input.bind(motionTree))
 			var motionRoot = motionTree.create_item()
 			for c in clips:
@@ -513,6 +518,21 @@ func _on_mesh_item_selected(tree: Tree):
 	var meshItem: TreeItem = tree.get_selected()
 	MeshExt.mesh_clear_all_outline()
 	MeshExt.mesh_create_outline(meshItem.get_metadata(0))
+
+
+# One click on a row does what the row is for. These lists used to act on item_activated, which
+# needs a double click (or Enter), so every row took two clicks. item_mouse_selected fires on each
+# click, including a second click on the row that is already selected.
+func _on_row_clicked(_position: Vector2, button: int, act: Callable, tree: Tree) -> void:
+	if button == MOUSE_BUTTON_LEFT and tree.get_selected() != null:
+		act.call(tree)
+
+
+# A mesh row: frame the mesh. Its UV viewer stays on a double click and on the details card's button.
+func _on_mesh_item_clicked(tree: Tree) -> void:
+	var mesh: MeshInstance3D = tree.get_selected().get_metadata(0)
+	if mesh != null and mesh.mesh != null:
+		GlobalSignal.reposition_camera.emit(mesh.mesh.get_aabb())
 
 
 func _on_mesh_item_double_clicked(tree: Tree):
