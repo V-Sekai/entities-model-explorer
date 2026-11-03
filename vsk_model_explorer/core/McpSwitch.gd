@@ -13,7 +13,7 @@ var _mcp: Node
 func _ready() -> void:
 	_mcp = get_node_or_null("/root/MCP")
 	if _mcp == null or not _mcp.has_method("set_listening"):
-		queue_free()   # no server in this build (the web export has none)
+		queue_free()  # no server in this build (the web export has none)
 		return
 	theme = CardStyle.make_theme()
 	add_theme_stylebox_override("panel", CardStyle.card_box())
@@ -38,7 +38,7 @@ func _ready() -> void:
 
 func _on_toggled(on: bool) -> void:
 	var now: bool = _mcp.set_listening(on)
-	_switch.set_pressed_no_signal(now)   # off again if the port was taken
+	_switch.set_pressed_no_signal(now)  # off again if the port was taken
 	ViewerSettings.set_bool("mcp", now)
 
 
