@@ -109,7 +109,7 @@ P = [
     ("beam_d", "300 mm", "Crouch beam depth along the course"),
     ("beam_t", "200 mm", "Crouch beam thickness"),
     ("post", "150 mm", "Beam post and tunnel wall thickness"),
-    ("tunnel_clear", "500 mm", "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m)"),
+    ("tunnel_clear", "600 mm", "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m; the belly crawl clears 0.562 m)"),
     ("tunnel_inner", "1500 mm", "Clear width inside the crawl tunnel"),
     ("tunnel_len", "2500 mm", "Crawl tunnel length"),
     ("roof", "120 mm", "Tunnel roof thickness"),

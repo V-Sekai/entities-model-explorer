@@ -292,8 +292,8 @@
    "command": "parameters.add",
    "params": {
     "name": "tunnel_clear",
-    "expression": "500 mm",
-    "comment": "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m)"
+    "expression": "600 mm",
+    "comment": "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m; the belly crawl clears 0.562 m)"
    }
   },
   {
