@@ -1,6 +1,8 @@
 #!/bin/sh
 # Fetch what walk mode (M, WASD) and the obstacle course (O, Shift+G) need and put it where the project reads it:
 #   mm.elf          the motion-matching controller: the newest green main run of V-Sekai-fire/interactor-motion-matching-guest
+#   skintokens.elf  the rig guest: the newest artifact built from main of V-Sekai-fire/interactor-skintokens-guest. An older one lacks
+#                   skintokens_motions_begin, so walk mode puts the 72 clips on the rig one job at a time (minutes, not seconds)
 #   mujoco.elf      the course's colliders: project/plans/mujoco.double.elf of V-Sekai-fire/interactor-mujoco-sandbox-demo
 #   motion/mm/      the clips: data/kimodo-locomotion and data/o3de-motionmatching of the motion-matching repo, laid out
 #                   as tools/package_desktop.sh and guest/build.py do (<clip>.f32, clips.tsv, skeleton.txt, parents.txt)
@@ -13,6 +15,9 @@ trap 'rm -rf "$work"' EXIT
 run=$(gh run list -R V-Sekai-fire/interactor-motion-matching-guest --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
 gh run download "$run" -R V-Sekai-fire/interactor-motion-matching-guest -D "$work/mm"
 cp "$work"/mm/mm-elf-*/mm.elf "$here/mm.elf"
+sk=$(gh api "repos/V-Sekai-fire/interactor-skintokens-guest/actions/artifacts?per_page=20" --jq '[.artifacts[]|select(.workflow_run.head_branch=="main" and .expired==false)]|sort_by(.created_at)|last|"\(.workflow_run.id) \(.name)"')
+gh run download "${sk%% *}" -R V-Sekai-fire/interactor-skintokens-guest -n "${sk#* }" -D "$work/sk"
+cp "$work/sk/skintokens.elf" "$here/skintokens.elf"
 gh api repos/V-Sekai-fire/interactor-mujoco-sandbox-demo/contents/project/plans/mujoco.double.elf -H "Accept: application/vnd.github.raw" > "$here/mujoco.elf"
 git clone -q --depth 1 --filter=blob:none --sparse https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$work/repo"
 git -C "$work/repo" sparse-checkout set data

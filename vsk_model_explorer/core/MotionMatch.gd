@@ -511,12 +511,17 @@ func _all_clips_at_once(
 	var label := "Move: putting %d clips on the rig" % keys.size()
 	say(label)
 	rig.vmcall("skintokens_motions_begin", soma.names, soma.parents, 30.0)
-	for k in keys:
+	for i in keys.size():
+		var k := keys[i]
 		var xf := FileAccess.get_file_as_bytes(DIR.path_join(k + ".f32")).to_float32_array()
 		var added := str(rig.vmcall("skintokens_motions_add", PREFIX + k, xf))
 		if not added.begins_with("OK"):
 			_fail(added)
 			return PackedByteArray()
+		# Each add is a blocking call: say how far it is and let the window draw, or it looks stuck.
+		say("%s (clip %d of %d)" % [label, i + 1, keys.size()])
+		if i % 4 == 3:
+			await get_tree().process_frame
 	var started := str(rig.vmcall("skintokens_motions_start", source))
 	if not started.begins_with("STARTED"):
 		_fail(started)
