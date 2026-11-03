@@ -14,7 +14,7 @@ func set_material_view(mat: Material):
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	BtnClose.pressed.connect(_on_btn_close_pressed)
-	MatTree.item_mouse_selected.connect(_on_property_clicked.bind(MatTree))   # one click opens a texture, as in the left column
+	MatTree.item_mouse_selected.connect(_on_property_clicked.bind(MatTree))  # one click opens a texture, as in the left column
 
 	if materialView != null:
 		MatNameLabel.text = materialView.resource_name
@@ -54,11 +54,11 @@ func _create_property(root: TreeItem, pname: String, value):
 	if value is Texture2D or value is ImageTexture:
 		var img = value.get_image() as Image
 		img.resize(50, 50)
-		img.flip_y()   # previews match the UV viewer: up and down swapped
+		img.flip_y()  # previews match the UV viewer: up and down swapped
 		item.set_icon(1, ImageTexture.create_from_image(img))
 		item.set_metadata(1, value)
 	elif value is Image:
-		var img: Image = (value as Image).duplicate()   # a copy: the preview must not change the image itself
+		var img: Image = (value as Image).duplicate()  # a copy: the preview must not change the image itself
 		img.resize(50, 50)
 		img.flip_y()
 		item.set_icon(1, ImageTexture.create_from_image(img))

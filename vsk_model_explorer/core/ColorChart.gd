@@ -44,7 +44,7 @@ const BOARD_D := CHART_W * 0.04
 
 func _init() -> void:
 	name = "ColorCharts"
-	visible = ViewerSettings.get_bool("color_chart", false)   # hidden at start unless it was left showing
+	visible = ViewerSettings.get_bool("color_chart", false)  # hidden at start unless it was left showing
 	var img := Image.create(6 * 16, 4 * 16, false, Image.FORMAT_RGB8)
 	for i in CHECKER.size():
 		var c: Array = CHECKER[i]

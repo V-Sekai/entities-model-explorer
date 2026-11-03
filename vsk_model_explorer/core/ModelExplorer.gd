@@ -336,7 +336,9 @@ func _humanoid_name(json: Dictionary, role: String) -> String:
 	var ext: Dictionary = json.get("extensions", {})
 	var idx := -1
 	if ext.has("VRMC_vrm"):
-		idx = int(ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).get(role, {}).get("node", -1))
+		idx = int(
+			ext["VRMC_vrm"].get("humanoid", {}).get("humanBones", {}).get(role, {}).get("node", -1)
+		)
 	elif ext.has("VRM"):
 		for hb in ext["VRM"].get("humanoid", {}).get("humanBones", []):
 			if hb.get("bone", "") == role:
@@ -446,7 +448,14 @@ func _on_version_resized() -> void:
 
 func _fit_version_label(bg: PanelContainer, label: Label) -> void:
 	# Card padding is double the content margin; size the card, pin top-right.
-	var pw: float = label.get_theme_font("font").get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")).x
+	var pw: float = (
+		label
+		. get_theme_font("font")
+		. get_string_size(
+			label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")
+		)
+		. x
+	)
 	var ph: float = label.get_theme_font("font").get_height(label.get_theme_font_size("font_size"))
 	var pad: float = CardStyle.PAD * 2.0
 	var cw: float = pw + pad

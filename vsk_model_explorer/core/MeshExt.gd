@@ -107,8 +107,15 @@ func uv_view(mi: MeshInstance3D) -> Dictionary:
 func _base_texture(mat: Material) -> Texture2D:
 	if mat is BaseMaterial3D:
 		return (mat as BaseMaterial3D).albedo_texture
-	if mat is ShaderMaterial:   # MToon and other shaders name their base image differently
-		for param in ["_MainTex", "main_tex", "albedo_texture", "base_color_texture", "texture_albedo", "BaseColorTexture"]:
+	if mat is ShaderMaterial:  # MToon and other shaders name their base image differently
+		for param in [
+			"_MainTex",
+			"main_tex",
+			"albedo_texture",
+			"base_color_texture",
+			"texture_albedo",
+			"BaseColorTexture"
+		]:
 			var t = (mat as ShaderMaterial).get_shader_parameter(param)
 			if t is Texture2D:
 				return t

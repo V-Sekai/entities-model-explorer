@@ -9,7 +9,7 @@ extends Control
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
 const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
-var ROW := 34.0   # 44 on a touchscreen: the least a fingertip can hit
+var ROW := 34.0  # 44 on a touchscreen: the least a fingertip can hit
 const PAD := 14.0
 const ICON_W := 40.0
 const MARGIN := 16.0
@@ -21,7 +21,20 @@ const MOTION := ["E", "F", "M or Start"]
 const GAP := 24.0
 const FLASH_SECONDS := 0.25
 # Keys a tap on a row presses (the row's keys, as the card names them).
-const KEYS := {"L": KEY_L, "W": KEY_W, "E": KEY_E, "G": KEY_G, "O": KEY_O, "F": KEY_F, "M": KEY_M, "C": KEY_C, "Z": KEY_Z, "Space": KEY_SPACE, "Esc": KEY_ESCAPE, "H": KEY_H}
+const KEYS := {
+	"L": KEY_L,
+	"W": KEY_W,
+	"E": KEY_E,
+	"G": KEY_G,
+	"O": KEY_O,
+	"F": KEY_F,
+	"M": KEY_M,
+	"C": KEY_C,
+	"Z": KEY_Z,
+	"Space": KEY_SPACE,
+	"Esc": KEY_ESCAPE,
+	"H": KEY_H
+}
 
 var INK: Color
 var MUTE: Color
@@ -42,7 +55,7 @@ const ROWS := [
 
 var font: Font
 var rows: Array = []
-var flash := -1   # the row just tapped
+var flash := -1  # the row just tapped
 var toggle: Button
 
 
@@ -65,7 +78,7 @@ func add_row(row: Array) -> void:
 	var motion: bool = row[0] == "keys" and MOTION.has(row[2])
 	var at := rows.size() - 1
 	if not motion and _motion_start() >= 0:
-		at = _motion_start()   # a row that only changes the look stays above the motion rows
+		at = _motion_start()  # a row that only changes the look stays above the motion rows
 	rows.insert(at, row)
 	_fit()
 	queue_redraw()
@@ -73,7 +86,9 @@ func add_row(row: Array) -> void:
 
 # Pinned to the bottom-right corner, MARGIN px in; the offsets follow the height as rows change.
 func _fit() -> void:
-	custom_minimum_size = Vector2(300, PAD * 2 + 22 + ROW * rows.size() + 18 + (GAP if _motion_start() >= 0 else 0.0))
+	custom_minimum_size = Vector2(
+		300, PAD * 2 + 22 + ROW * rows.size() + 18 + (GAP if _motion_start() >= 0 else 0.0)
+	)
 	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	offset_right = -MARGIN
 	offset_bottom = -MARGIN - TOGGLE - 8.0
@@ -83,7 +98,7 @@ func _fit() -> void:
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
-	visible = ViewerSettings.get_bool("controls_card", true)   # shown or hidden as it was left
+	visible = ViewerSettings.get_bool("controls_card", true)  # shown or hidden as it was left
 	mouse_filter = Control.MOUSE_FILTER_STOP  # taps on a row press its key; the rest of the screen is untouched
 	_fit()
 	# A touch screen has no H key: a button that stays when the card is hidden.
@@ -149,7 +164,7 @@ func _gui_input(event: InputEvent) -> void:
 	flash = i
 	queue_redraw()
 	await _press(KEYS[r[1][-1]], r[1].size() > 1 and r[1][0] == "Shift")
-	await get_tree().create_timer(FLASH_SECONDS).timeout   # the key takes two frames; the highlight must outlast a glance
+	await get_tree().create_timer(FLASH_SECONDS).timeout  # the key takes two frames; the highlight must outlast a glance
 	if flash == i:
 		flash = -1
 	queue_redraw()

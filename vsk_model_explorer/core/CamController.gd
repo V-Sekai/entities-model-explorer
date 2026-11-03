@@ -190,7 +190,10 @@ func _on_root_gltf_is_loaded(success, model):
 	# Anything else: all of it in view from a three-quarter view a little above, turning about its middle.
 	position = box.get_center()
 	var distance: float = $CamRotHelper/Camera3D.position.z
-	scale = Vector3.ONE * clampf(box.size.length() * 0.5 * FRAME_MARGIN / distance, MIN_SCALE, MAX_SCALE)
+	scale = (
+		Vector3.ONE
+		* clampf(box.size.length() * 0.5 * FRAME_MARGIN / distance, MIN_SCALE, MAX_SCALE)
+	)
 	rotation.y = deg_to_rad(START_YAW)
 	CamRotHelper.rotation.x = deg_to_rad(START_PITCH)
 
@@ -218,7 +221,12 @@ func _eye_height(model: Node3D, box: AABB) -> float:
 			var b := sk.find_bone(head)
 			if b >= 0:
 				return (sk.global_transform * sk.get_bone_global_pose(b).origin).y + EYE_ABOVE_HEAD
-	var human_sized := box.size.y >= 0.9 and box.size.y <= 2.4 and box.size.y > box.size.x and box.size.y > box.size.z
+	var human_sized := (
+		box.size.y >= 0.9
+		and box.size.y <= 2.4
+		and box.size.y > box.size.x
+		and box.size.y > box.size.z
+	)
 	if human_sized and not model.find_children("*", "Skeleton3D", true, false).is_empty():
 		return box.position.y + 0.93 * box.size.y
 	return 0.0
