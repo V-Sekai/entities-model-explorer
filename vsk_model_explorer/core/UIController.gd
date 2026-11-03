@@ -305,6 +305,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 
 						img = mat.albedo_texture.get_image()
 						img.resize(32, 32)
+						img.flip_y()   # previews match the UV viewer: up and down swapped
 					else:
 						img = Image.create(32, 32, false, Image.FORMAT_RGBA8)
 						img.fill(mat.albedo_color)
@@ -329,6 +330,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 							matItem.set_text(0, parameter_name.trim_prefix("_").capitalize())
 							img = mat.albedo_texture.get_image()
 							img.resize(32, 32)
+							img.flip_y()   # previews match the UV viewer: up and down swapped
 						elif parameter is Image:
 							img = Image.create(32, 32, false, Image.FORMAT_RGBA8)
 							img.fill(parameter)
@@ -360,6 +362,7 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 				if tex is Texture2D:
 					var img = (tex as Texture2D).get_image()
 					img.resize(50, 50)
+					img.flip_y()   # previews match the UV viewer: up and down swapped
 
 					var texItem: TreeItem = textureInfoTree.create_item(texParent)
 					texItem.set_icon(0, ImageTexture.create_from_image(img))
@@ -376,8 +379,9 @@ func _on_root_gltf_is_loaded(success, gltf: Node):
 					)
 					texItem.set_metadata(0, tex)
 				elif tex is Image:
-					var img: Image = tex
+					var img: Image = (tex as Image).duplicate()   # a copy: the preview must not change the image itself
 					img.resize(50, 50)
+					img.flip_y()   # previews match the UV viewer: up and down swapped
 
 					var texItem: TreeItem = textureInfoTree.create_item(texParent)
 					texItem.set_icon(0, ImageTexture.create_from_image(img))
