@@ -2559,6 +2559,24 @@
    }
   },
   {
+   "command": "sketch.constraint.coincident",
+   "params": {
+    "a": "g1.start",
+    "b": "x"
+   }
+  },
+  {
+   "command": "sketch.dimension",
+   "params": {
+    "entities": [
+     "origin",
+     "g1.start"
+    ],
+    "type": "horizontal",
+    "value": "course_w / 2 + post"
+   }
+  },
+  {
    "command": "sketch.dimension",
    "params": {
     "entities": [
@@ -2594,17 +2612,6 @@
     ],
     "type": "vertical",
     "value": "beam_clear"
-   }
-  },
-  {
-   "command": "sketch.dimension",
-   "params": {
-    "entities": [
-     "origin",
-     "g1.start"
-    ],
-    "type": "horizontal",
-    "value": "course_w / 2 + post"
    }
   },
   {
@@ -2688,6 +2695,24 @@
    }
   },
   {
+   "command": "sketch.constraint.coincident",
+   "params": {
+    "a": "n1.start",
+    "b": "x"
+   }
+  },
+  {
+   "command": "sketch.dimension",
+   "params": {
+    "entities": [
+     "origin",
+     "n1.start"
+    ],
+    "type": "horizontal",
+    "value": "tunnel_inner / 2 + post"
+   }
+  },
+  {
    "command": "sketch.dimension",
    "params": {
     "entities": [
@@ -2723,17 +2748,6 @@
      "n1"
     ],
     "value": "tunnel_clear + roof"
-   }
-  },
-  {
-   "command": "sketch.dimension",
-   "params": {
-    "entities": [
-     "origin",
-     "n1.start"
-    ],
-    "type": "horizontal",
-    "value": "tunnel_inner / 2 + post"
    }
   },
   {
