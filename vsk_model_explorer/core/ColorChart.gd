@@ -1,4 +1,5 @@
 extends Node3D
+const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
 # A ColorChecker board standing on the floor to the right (+X) of the model, like a real chart
 # propped up beside a subject in a photo. Two charts on one board: the top one is lit like the
 # model (it shows what the lights and ambient do), the bottom one is unshaded (it shows only the
@@ -43,7 +44,7 @@ const BOARD_D := CHART_W * 0.04
 
 func _init() -> void:
 	name = "ColorCharts"
-	visible = false
+	visible = ViewerSettings.get_bool("color_chart", false)   # hidden at start unless it was left showing
 	var img := Image.create(6 * 16, 4 * 16, false, Image.FORMAT_RGB8)
 	for i in CHECKER.size():
 		var c: Array = CHECKER[i]
@@ -127,3 +128,4 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k and k.pressed and not k.echo and k.keycode == KEY_C:
 		visible = not visible
+		ViewerSettings.set_bool("color_chart", visible)
