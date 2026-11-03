@@ -99,6 +99,7 @@ var _test_input := Vector2.ZERO
 var _test_run := false
 var _test_mode := STAND
 var _test_jump := false
+var _test_jump_cm := 0  # the length the test asks of its jump (0: any)
 var _start_after_load := false
 var _jumping := false
 var _kind := 0
@@ -1208,6 +1209,9 @@ func _process(delta: float) -> void:
 	_node.velocity = Vector2(soma_v.x, soma_v.z)
 	_node.mode = MM_PRONE if _mode == PRONE else _mode  # mm.elf's mode numbers: prone is 6
 	_node.jump = _jump_pressed
+	if _jump_pressed:
+		_node.jump_len_cm = _test_jump_cm
+		_test_jump_cm = 0
 	_jump_pressed = false
 	# MotionMatchNode steps mm.elf and Godot blends the clips it picks.
 	_tree.advance(dt)
@@ -1231,6 +1235,10 @@ func _process(delta: float) -> void:
 		char_scene.y = (
 			gy if gy >= _last_world.y else lerp(_last_world.y, gy, 1.0 - exp(-dt * 12.0))
 		)
+		# In flight the clip's own arc carries the body: the origin keeps its take-off height
+		# (it does not sink into a gap), and the ground takes it again on landing.
+		if _kind == 4 and gy < _last_world.y:
+			char_scene.y = _last_world.y
 	_scene.transform = Transform3D(Basis(Vector3.UP, turn), char_scene)
 	if _trace:
 		var hb := _skeleton.find_bone(_hips_path.get_slice(":", 1))
@@ -1357,6 +1365,8 @@ func _run_test() -> void:
 		_test_run = step[2]
 		_test_mode = step[5]
 		_test_jump = step[6]
+		if step[0] == "jump":
+			_test_jump_cm = int(round((_course_limits().gap + 1.0) * 100.0))  # the gap and a foot, in SOMA metres
 		if step[5] != STAND and _mode_speed[step[5]] <= 0.0:
 			print("MOVE-STEP %s SKIP no poses of that kind" % step[0])
 			continue
@@ -1702,7 +1712,9 @@ func _view_cam() -> Camera3D:
 # The course's clear heights, in course metres, read from colliders.json: the crouch bar's underside, the tunnel roof's
 # underside and the platforms' height.
 func _course_limits() -> Dictionary:
-	var out := {"bar": INF, "roof": INF, "plat": 0.0}
+	var out := {"bar": INF, "roof": INF, "plat": 0.0, "gap": 0.0}
+	var near: Array = []
+	var far: Array = []
 	var cols: Array = JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment("COURSE_COLLIDERS") if OS.get_environment("COURSE_COLLIDERS") != "" else "res://vsk_model_explorer/course/colliders.json")).colliders
 	for c in cols:
 		var p: Array = c.prim
@@ -1713,6 +1725,11 @@ func _course_limits() -> Dictionary:
 			out.roof = min(out.roof, p[2] - p[5])
 		elif n.begins_with("PlatformNear"):
 			out.plat = p[2] + p[5]
+			near = p
+		elif n.begins_with("PlatformFar"):
+			far = p
+	if not near.is_empty() and not far.is_empty():
+		out.gap = absf(far[3] - near[3]) - (near[6] + far[6])
 	return out
 
 

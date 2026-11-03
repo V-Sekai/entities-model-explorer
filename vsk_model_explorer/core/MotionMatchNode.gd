@@ -15,6 +15,8 @@ var loops := PackedByteArray()  # 1 for a loop (plays on through its seam), 0 fo
 var velocity := Vector2.ZERO
 var mode := 0
 var jump := false
+# With jump: the shortest flight in centimetres (SOMA metres x 100) the jump must cover, 0 for the best fitting take-off.
+var jump_len_cm := 0
 # Output of the last step.
 var clip := -1
 var time := 0.0
@@ -35,9 +37,10 @@ func _process_animation_node(
 	if test_only or mm == null or delta <= 0.0:
 		return info
 	var r: PackedFloat32Array = mm.vmcall(
-		"mm_step", delta, velocity.x, velocity.y, NAN, mode, 1 if jump else 0
+		"mm_step", delta, velocity.x, velocity.y, NAN, mode, (maxi(jump_len_cm, 1) if jump else 0)
 	)
 	jump = false
+	jump_len_cm = 0
 	if r.size() < 15:
 		return info
 	result = r
