@@ -260,7 +260,7 @@
    "command": "parameters.add",
    "params": {
     "name": "beam_clear",
-    "expression": "1300 mm",
+    "expression": "1650 mm",
     "comment": "Clear height under the crouch beam"
    }
   },
@@ -292,8 +292,8 @@
    "command": "parameters.add",
    "params": {
     "name": "tunnel_clear",
-    "expression": "700 mm",
-    "comment": "Clear height inside the crawl tunnel"
+    "expression": "500 mm",
+    "comment": "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m)"
    }
   },
   {

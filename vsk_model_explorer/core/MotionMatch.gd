@@ -1328,9 +1328,24 @@ func _run_test() -> void:
 	# MOVE_STEPS=course: run straight down the obstacle course (with --obstacle-course).
 	if only == "course":
 		plan = [["course", Vector2(0, 1), true, 26.0, 0.0, STAND, false]]
+	# MOVE_STEPS=course-stages: the course in stages, each ending when the hips reach its stop distance (metres from
+	# the start, in the scaled course; 0.851 of the course's own metres for the 1.75 m person), with the pose kind the
+	# station asks for: crouch under the bar, crawl through the tunnel, jump the gap.
+	var stage_stop := {}
+	if only == "course-stages":
+		plan = [
+			["approach", Vector2(0, 1), true, 60.0, 0.0, STAND, false],
+			["duck", Vector2(0, 1), false, 20.0, 0.0, CROUCH, false],
+			["stand_up", Vector2(0, 1), false, 10.0, 0.0, STAND, false],
+			["crawl", Vector2(0, 1), false, 20.0, 0.0, CRAWL, false],
+			["to_gap", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
+			["jump", Vector2(0, 1), true, 10.0, 0.0, STAND, true],
+			["finish", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
+		]
+		stage_stop = {"approach": 33.2, "duck": 35.0, "stand_up": 35.8, "crawl": 38.6, "to_gap": 40.6, "jump": 42.2, "finish": 44.8}
 	var ok := keys_ok and _test_loops()
 	for step in plan:
-		if only != "" and not step[0] in only.split(","):
+		if only != "" and only != "course-stages" and not step[0] in only.split(","):
 			continue
 		_test_input = step[1]
 		_test_run = step[2]
@@ -1357,7 +1372,7 @@ func _run_test() -> void:
 		var faces: Array[Vector2] = []
 		var face_at: Array = []
 		var step_frames := 0
-		while t < step[3]:
+		while t < step[3] and not (stage_stop.has(step[0]) and _last_world.z >= stage_stop[step[0]]):
 			await get_tree().process_frame
 			var dt := get_process_delta_time()
 			t += dt
@@ -1378,6 +1393,13 @@ func _run_test() -> void:
 			# In units of the longest honest frame step: running for the 1/20 s frame cap.
 			leap = max(leap, step_m / (_run_speed * _scale / 20.0))
 			hips_prev = hw
+			if stage_stop.has(step[0]) and Engine.get_process_frames() % 12 == 0:
+				var bw := {}
+				for bn in ["J_Bip_C_Head", "J_Bip_L_Hand", "J_Bip_R_Hand", "J_Bip_L_Foot", "J_Bip_R_Foot", "J_Bip_L_LowerLeg"]:
+					var bi := _skeleton.find_bone(bn)
+					bw[bn] = snappedf((_skeleton.global_transform * _skeleton.get_bone_global_pose(bi)).origin.y, 0.001) if bi >= 0 else -9.0
+				print("STAGE-BONES %s scene_y=%.3f origin_y=%.3f scale=%.3f %s" % [step[0], _scene.global_transform.origin.y, _origin.y, _scale, str(bw)])
+				print("STAGE-FLOOR %s z=%.2f lowest_bone_y=%.3f char_y=%.3f hips_y=%.3f kind=%d clip=%s" % [step[0], _last_world.z, _lowest_bone_y(), _last_world.y, hw.y, _kind, str(_keys[_clip])])
 			if _kind == 4:
 				air += dt
 			var e := _pose_error()
@@ -1393,6 +1415,8 @@ func _run_test() -> void:
 				var f := _hips_forward()
 				faces.append(Vector2(f.x, f.z).normalized() * dt)
 				face_at.append([t, str(_keys[_clip])])
+		if stage_stop.has(step[0]):
+			print("COURSE-STAGE %s reached=%d z=%.2f stop=%.1f t=%.1f kind=%d" % [step[0], 1 if _last_world.z >= stage_stop[step[0]] else 0, _last_world.z, stage_stop[step[0]], t, _kind])
 		var moved: Vector3 = _last_world - p0
 		var secs: float = step[3] * 0.5
 		var speed: float = Vector2(moved.x, moved.z).length() / secs
