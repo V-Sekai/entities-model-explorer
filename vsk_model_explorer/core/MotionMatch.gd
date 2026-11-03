@@ -85,6 +85,8 @@ var _mode := STAND
 var _jump_pressed := false
 var _pad_prev := {}
 var _origin := Vector3.ZERO
+var _cam_before := {}  # the camera as it was before the walk: pos, yaw, scale, pitch
+const WALK_CAM_BEHIND := 3.0  # metres behind the character in walk mode
 var _clip := -1
 var _last_world := Vector3.ZERO
 # How far the course's walls have held the model back from where root motion put it.
@@ -402,6 +404,7 @@ func stop() -> void:
 	on = false
 	_clear_target()
 	remove_from_group("walk_mode")
+	_restore_camera()
 	if is_instance_valid(_tree):
 		_tree.active = false
 	if _player:
@@ -414,6 +417,20 @@ func stop() -> void:
 		elif _skeleton:
 			_stay()
 	say("")
+
+
+# The camera back where it was before the walk, moved by how far the character walked.
+func _restore_camera() -> void:
+	if _cam_before.is_empty():
+		return
+	var cc := get_parent().get_node_or_null("CamController") as Node3D
+	var rot := get_parent().get_node_or_null("CamController/CamRotHelper") as Node3D
+	if cc and rot:
+		cc.rotation.y = _cam_before["yaw"]
+		cc.scale = _cam_before["scale"]
+		rot.rotation.x = _cam_before["pitch"]
+		cc.position = _cam_before["pos"] + (cc.position - _cam_before["pos"]) * Vector3(1, 0, 1)  # keep where it walked, on the floor plane
+	_cam_before = {}
 
 
 # M off: the model stays where the walk left it, facing the way it faced. The pose goes back to
@@ -1066,11 +1083,27 @@ func _begin() -> void:
 	_jump_pressed = false
 	_clear_target()
 	_origin = _scene.position
-	# Look down at the floor around the model so a click or tap can reach it. The camera starts
-	# level at the model's feet, where every floor point is on the horizon line.
+	# Third person, from behind, through the character's eyes: the camera sits WALK_CAM_BEHIND metres behind
+	# it at its eye level, looking the way it faces. Every floor point is then below the horizon, so a click
+	# or tap can still reach it. stop() puts the camera back as it was.
+	var cc0 := get_parent().get_node_or_null("CamController") as Node3D
 	var rot := get_parent().get_node_or_null("CamController/CamRotHelper") as Node3D
-	if rot and rot.rotation.x > deg_to_rad(-10.0):
-		rot.rotation.x = deg_to_rad(-25.0)
+	var eye_cam := get_parent().get_node_or_null("CamController/CamRotHelper/Camera3D") as Node3D
+	if cc0 and rot and eye_cam:
+		_cam_before = {
+			"pos": cc0.position, "yaw": cc0.rotation.y, "scale": cc0.scale, "pitch": rot.rotation.x
+		}
+		var facing := _scene.global_transform.basis.z  # a model faces +Z
+		facing.y = 0.0
+		if facing.length() > 0.01:
+			cc0.rotation.y = atan2(-facing.x, -facing.z)  # the camera looks along the character's facing
+		rot.rotation.x = 0.0
+		cc0.scale = Vector3.ONE * (WALK_CAM_BEHIND / eye_cam.position.z)
+		var eye: float = (
+			cc0._eye_height(_scene, cc0._bounds(_scene)) if cc0.has_method("_eye_height") else 0.0
+		)
+		if eye > 0.0:
+			cc0.position = Vector3(_origin.x, eye, _origin.z)
 	on = true
 	add_to_group("walk_mode")
 	_last_world = _origin

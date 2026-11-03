@@ -32,7 +32,9 @@ proj="$app/Contents/Resources/project"
 mkdir -p "$app/Contents/MacOS" "$proj"
 git -C "$here" archive HEAD | tar -x -C "$proj"
 rm -rf "$proj/guest"
-[ -f "$here/skintokens.elf" ] && cp "$here/skintokens.elf" "$proj/"
+for f in skintokens.elf mm.elf mujoco.elf; do [ -f "$here/$f" ] && cp "$here/$f" "$proj/"; done
+# walk mode and the obstacle course need mm.elf, mujoco.elf and motion/mm (tools/fetch_walk_assets.sh puts them there)
+[ -d "$here/motion/mm" ] && mkdir -p "$proj/motion" && cp -R "$here/motion/mm" "$proj/motion/mm"
 cat > "$proj/addons/vsk_version/build_constants.gd" <<EOF
 # Set by the build system, do not modify!
 const BUILD_LABEL = "build @ $sha"
