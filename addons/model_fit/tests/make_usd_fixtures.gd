@@ -3,6 +3,7 @@ extends SceneTree
 # the caller's frame; the OBJ is only the source these were converted from once.
 # usage: -- <usd.elf> <in.obj> <out.usdz> [<in2.obj> <out2.usdz> ...]
 
+
 func _init() -> void:
 	var a := OS.get_cmdline_user_args()
 	var elf := FileAccess.get_file_as_bytes(a[0])
@@ -31,11 +32,19 @@ func _init() -> void:
 		root.add_child(sb)
 		sb.load_buffer(elf)
 		sb.vmcall("usd_init")
-		var header := "%s\nnp=%d\nnuv=0\nnrest=0\nnf=%d\nni=%d" % [a[i + 1].get_file().get_basename(), pts.size() / 3, nf, tri.size()]
+		var header := (
+			"%s\nnp=%d\nnuv=0\nnrest=0\nnf=%d\nni=%d"
+			% [a[i + 1].get_file().get_basename(), pts.size() / 3, nf, tri.size()]
+		)
 		var pkg = sb.vmcall("usd_write_mesh", pts, ints, header, "")
 		if typeof(pkg) != TYPE_PACKED_BYTE_ARRAY:
 			print("FAILED ", a[i + 1], ": ", str(pkg).left(200))
 			continue
 		FileAccess.open(a[i + 1], FileAccess.WRITE).store_buffer(pkg)
-		print("wrote %s: %d points, %d triangles, %d bytes" % [a[i + 1], pts.size() / 3, nf, pkg.size()])
+		print(
+			(
+				"wrote %s: %d points, %d triangles, %d bytes"
+				% [a[i + 1], pts.size() / 3, nf, pkg.size()]
+			)
+		)
 	quit(0)

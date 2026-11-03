@@ -8,7 +8,22 @@ extends RefCounted
 # debug objects), which are not clothing; both lists are arguments too. Nothing here moves a vertex.
 
 const DEFAULT_BASE_PATTERNS := ["^Body$", "^BodyBase$", "^BaseBody$", "^Base$"]
-const DEFAULT_EXCLUDE := ["hair", "ear", "tail", "eye", "brow", "lash", "mouth", "tongue", "teeth", "face", "head", "debug", "wing", "horn"]
+const DEFAULT_EXCLUDE := [
+	"hair",
+	"ear",
+	"tail",
+	"eye",
+	"brow",
+	"lash",
+	"mouth",
+	"tongue",
+	"teeth",
+	"face",
+	"head",
+	"debug",
+	"wing",
+	"horn"
+]
 
 var base_patterns: Array = DEFAULT_BASE_PATTERNS.duplicate()
 var exclude: Array = DEFAULT_EXCLUDE.duplicate()
@@ -62,14 +77,23 @@ func plan(source: Node, target: Node) -> Dictionary:
 	var b := classify(target)
 	var warnings := []
 	if a["base"].is_empty():
-		warnings.append("no base mesh found in the source avatar (names tried: %s)" % str(base_patterns))
+		warnings.append(
+			"no base mesh found in the source avatar (names tried: %s)" % str(base_patterns)
+		)
 	if b["base"].is_empty():
-		warnings.append("no base mesh found in the target avatar (names tried: %s)" % str(base_patterns))
+		warnings.append(
+			"no base mesh found in the target avatar (names tried: %s)" % str(base_patterns)
+		)
 	if a["clothing"].is_empty():
 		warnings.append("the source avatar has no clothing meshes")
 	if a["base"].size() > 3 or b["base"].size() > 3:
 		warnings.append("more than three base meshes matched; check the base patterns")
-	return {"garments": a["clothing"], "source_base": a["base"], "target_base": b["base"], "warnings": warnings}
+	return {
+		"garments": a["clothing"],
+		"source_base": a["base"],
+		"target_base": b["base"],
+		"warnings": warnings
+	}
 
 
 # Hide the source avatar's base meshes (the other avatar's base). Returns the meshes that were visible and are now hidden, so a caller can restore them.

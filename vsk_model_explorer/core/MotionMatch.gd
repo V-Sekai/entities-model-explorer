@@ -32,7 +32,9 @@ const ROOT := "MMRoot"
 const STAND := 0
 const CROUCH := 1
 const CRAWL := 2
-const MODE_NAMES := ["standing", "crouching", "crawling"]
+const PRONE := 3  # flat on the belly; mm.elf asks for it as mode 6 (see MM_PRONE)
+const MM_PRONE := 6
+const MODE_NAMES := ["standing", "crouching", "crawling", "prone"]
 # Walk to a point: a press and release closer than TAP_SLOP pixels is a tap (a drag is not).
 # The model stops within ARRIVE SOMA metres of the point.
 const TAP_SLOP := 12.0
@@ -79,7 +81,7 @@ var _scale := 1.0
 var _phi := 0.0
 var _walk_speed := 1.3
 var _run_speed := 3.5
-var _mode_speed := [1.3, 0.8, 0.4]
+var _mode_speed := [1.3, 0.8, 0.4, 0.3]
 var _mode := STAND
 var _jump_pressed := false
 var _pad_prev := {}
@@ -97,6 +99,7 @@ var _test_input := Vector2.ZERO
 var _test_run := false
 var _test_mode := STAND
 var _test_jump := false
+var _test_jump_cm := 0  # the length the test asks of its jump (0: any)
 var _start_after_load := false
 var _jumping := false
 var _kind := 0
@@ -151,7 +154,7 @@ func say(text: String) -> void:
 
 
 # The walk keys. In walk mode they belong to the walk: no other part of the viewer gets them.
-const WALK_KEYS := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_C, KEY_Z, KEY_SPACE]
+const WALK_KEYS := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_C, KEY_Z, KEY_X, KEY_SPACE]
 
 
 # _input runs before the GUI and before _unhandled_key_input, so a focused button or list does
@@ -178,6 +181,8 @@ func _input(event: InputEvent) -> void:
 		_mode = STAND if _mode == CROUCH else CROUCH
 	elif k.keycode == KEY_Z:
 		_mode = STAND if _mode == CRAWL else CRAWL
+	elif k.keycode == KEY_X:
+		_mode = STAND if _mode == PRONE else PRONE
 	elif k.keycode == KEY_SPACE:
 		_jump_pressed = true
 		_space_jumps += 1
@@ -638,7 +643,7 @@ func _bake() -> bool:
 	if not tops.is_empty():
 		tops.sort()
 		_run_speed = tops[tops.size() / 2]
-	_mode_speed = [_walk_speed, 0.0, 0.0]
+	_mode_speed = [_walk_speed, 0.0, 0.0, 0.0]
 	var modes := str(_mm.vmcall("mm_modes"))
 	for line in modes.split("\n", false):
 		var w := line.split(" ")
@@ -646,6 +651,8 @@ func _bake() -> bool:
 			_mode_speed[CROUCH] = float(w[2])
 		elif w[0] == "crawl":
 			_mode_speed[CRAWL] = float(w[2])
+		elif w[0] == "prone":
+			_mode_speed[PRONE] = float(w[2])
 	print(
 		(
 			"MOVE-SPEEDS walk=%.2f run=%.2f crouch=%.2f crawl=%.2f m/s | %s"
@@ -1200,8 +1207,11 @@ func _process(delta: float) -> void:
 	# Scene to SOMA: undo the rig's turn and scale.
 	var soma_v := want.rotated(Vector3.UP, -_phi) / _scale
 	_node.velocity = Vector2(soma_v.x, soma_v.z)
-	_node.mode = _mode
+	_node.mode = MM_PRONE if _mode == PRONE else _mode  # mm.elf's mode numbers: prone is 6
 	_node.jump = _jump_pressed
+	if _jump_pressed:
+		_node.jump_len_cm = _test_jump_cm
+		_test_jump_cm = 0
 	_jump_pressed = false
 	# MotionMatchNode steps mm.elf and Godot blends the clips it picks.
 	_tree.advance(dt)
@@ -1225,6 +1235,10 @@ func _process(delta: float) -> void:
 		char_scene.y = (
 			gy if gy >= _last_world.y else lerp(_last_world.y, gy, 1.0 - exp(-dt * 12.0))
 		)
+		# In flight the clip's own arc carries the body: the origin keeps its take-off height
+		# (it does not sink into a gap), and the ground takes it again on landing.
+		if _kind == 4 and gy < _last_world.y:
+			char_scene.y = _last_world.y
 	_scene.transform = Transform3D(Basis(Vector3.UP, turn), char_scene)
 	if _trace:
 		var hb := _skeleton.find_bone(_hips_path.get_slice(":", 1))
@@ -1328,14 +1342,47 @@ func _run_test() -> void:
 	# MOVE_STEPS=course: run straight down the obstacle course (with --obstacle-course).
 	if only == "course":
 		plan = [["course", Vector2(0, 1), true, 26.0, 0.0, STAND, false]]
+	# MOVE_STEPS=course-stages: the course in stages, each ending when the hips reach its stop distance (metres from
+	# the start, in the scaled course; 0.851 of the course's own metres for the 1.75 m person), with the pose kind the
+	# station asks for: crouch under the bar, crawl through the tunnel, jump the gap.
+	var stage_stop := {}
+	if only == "course-stages":
+		plan = [
+			["approach", Vector2(0, 1), true, 60.0, 0.0, STAND, false],
+			["duck", Vector2(0, 1), false, 20.0, 0.0, CROUCH, false],
+			["stand_up", Vector2(0, 1), false, 10.0, 0.0, STAND, false],
+			[
+				"crawl",
+				Vector2(0, 1),
+				false,
+				20.0,
+				0.0,
+				PRONE if OS.get_environment("MOVE_CRAWL") == "prone" else CRAWL,
+				false
+			],
+			["to_gap", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
+			["jump", Vector2(0, 1), true, 10.0, 0.0, STAND, true],
+			["finish", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
+		]
+		stage_stop = {
+			"approach": 33.2,
+			"duck": 35.0,
+			"stand_up": 35.8,
+			"crawl": 38.6,
+			"to_gap": 40.6,
+			"jump": 42.2,
+			"finish": 44.8
+		}
 	var ok := keys_ok and _test_loops()
 	for step in plan:
-		if only != "" and not step[0] in only.split(","):
+		if only != "" and only != "course-stages" and not step[0] in only.split(","):
 			continue
 		_test_input = step[1]
 		_test_run = step[2]
 		_test_mode = step[5]
 		_test_jump = step[6]
+		if step[0] == "jump":
+			_test_jump_cm = int(round((_course_limits().gap + 1.0) * 100.0))  # the gap and a foot, in SOMA metres
 		if step[5] != STAND and _mode_speed[step[5]] <= 0.0:
 			print("MOVE-STEP %s SKIP no poses of that kind" % step[0])
 			continue
@@ -1357,7 +1404,13 @@ func _run_test() -> void:
 		var faces: Array[Vector2] = []
 		var face_at: Array = []
 		var step_frames := 0
-		while t < step[3]:
+		var chk_head := -INF  # highest head bone, tallest back point, lowest-bone height and lowest ground in the stage
+		var chk_back := -INF
+		var chk_low := -INF
+		var chk_ground := INF
+		while (
+			t < step[3] and not (stage_stop.has(step[0]) and _last_world.z >= stage_stop[step[0]])
+		):
 			await get_tree().process_frame
 			var dt := get_process_delta_time()
 			t += dt
@@ -1378,6 +1431,59 @@ func _run_test() -> void:
 			# In units of the longest honest frame step: running for the 1/20 s frame cap.
 			leap = max(leap, step_m / (_run_speed * _scale / 20.0))
 			hips_prev = hw
+			if stage_stop.has(step[0]):
+				var hd := _skeleton.find_bone("J_Bip_C_Head")
+				if hd >= 0:
+					chk_head = max(
+						chk_head,
+						(_skeleton.global_transform * _skeleton.get_bone_global_pose(hd)).origin.y
+					)
+				chk_back = max(chk_back, hw.y)
+				chk_low = max(chk_low, _lowest_bone_y())
+				chk_ground = min(chk_ground, _last_world.y)
+			if stage_stop.has(step[0]) and Engine.get_process_frames() % 12 == 0:
+				var bw := {}
+				for bn in [
+					"J_Bip_C_Head",
+					"J_Bip_L_Hand",
+					"J_Bip_R_Hand",
+					"J_Bip_L_Foot",
+					"J_Bip_R_Foot",
+					"J_Bip_L_LowerLeg"
+				]:
+					var bi := _skeleton.find_bone(bn)
+					bw[bn] = (
+						snappedf(
+							(
+								(_skeleton.global_transform * _skeleton.get_bone_global_pose(bi))
+								. origin
+								. y
+							),
+							0.001
+						)
+						if bi >= 0
+						else -9.0
+					)
+				print(
+					(
+						"STAGE-BONES %s scene_y=%.3f origin_y=%.3f scale=%.3f %s"
+						% [step[0], _scene.global_transform.origin.y, _origin.y, _scale, str(bw)]
+					)
+				)
+				print(
+					(
+						"STAGE-FLOOR %s z=%.2f lowest_bone_y=%.3f char_y=%.3f hips_y=%.3f kind=%d clip=%s"
+						% [
+							step[0],
+							_last_world.z,
+							_lowest_bone_y(),
+							_last_world.y,
+							hw.y,
+							_kind,
+							str(_keys[_clip])
+						]
+					)
+				)
 			if _kind == 4:
 				air += dt
 			var e := _pose_error()
@@ -1389,10 +1495,59 @@ func _run_test() -> void:
 				p0 = _last_world
 			else:
 				kind_all += dt
-				kind_ok += dt if _kind == step[5] else 0.0
+				kind_ok += (
+					dt if _kind == step[5] or (step[5] == PRONE and _kind == MM_PRONE) else 0.0
+				)
 				var f := _hips_forward()
 				faces.append(Vector2(f.x, f.z).normalized() * dt)
 				face_at.append([t, str(_keys[_clip])])
+		if stage_stop.has(step[0]):
+			var reached: bool = _last_world.z >= stage_stop[step[0]]
+			var verdict := reached
+			var detail := ""
+			var lim := _course_limits()
+			var head_top := 0.19 * _scale  # the head bone to the top of the head
+			match step[0]:
+				"duck":
+					var room: float = lim.bar * _scale - (chk_head + head_top)
+					verdict = verdict and room >= 0.0
+					detail = (
+						"head_top %.3f bar_underside %.3f room %.3f"
+						% [chk_head + head_top, lim.bar * _scale, room]
+					)
+				"crawl":
+					var room: float = lim.roof * _scale - (chk_head + head_top)
+					verdict = verdict and room >= 0.0 and chk_low < lim.roof * _scale
+					detail = (
+						"head_top %.3f roof_underside %.3f room %.3f lowest_bone_max %.3f"
+						% [chk_head + head_top, lim.roof * _scale, room, chk_low]
+					)
+				"jump":
+					verdict = verdict and air >= 0.2 and chk_ground >= 0.5 * lim.plat * _scale
+					detail = (
+						"air %.2f s lowest_ground %.3f platform %.3f"
+						% [air, chk_ground, lim.plat * _scale]
+					)
+			print(
+				(
+					"COURSE-CHECK %s pass=%d reached=%d %s"
+					% [step[0], 1 if verdict else 0, 1 if reached else 0, detail]
+				)
+			)
+		if stage_stop.has(step[0]):
+			print(
+				(
+					"COURSE-STAGE %s reached=%d z=%.2f stop=%.1f t=%.1f kind=%d"
+					% [
+						step[0],
+						1 if _last_world.z >= stage_stop[step[0]] else 0,
+						_last_world.z,
+						stage_stop[step[0]],
+						t,
+						_kind
+					]
+				)
+			)
 		var moved: Vector3 = _last_world - p0
 		var secs: float = step[3] * 0.5
 		var speed: float = Vector2(moved.x, moved.z).length() / secs
@@ -1637,6 +1792,42 @@ func _hips_forward() -> Vector3:
 # orbit video circles the view, else the current one.
 func _view_cam() -> Camera3D:
 	return _input_cam if _input_cam else get_viewport().get_camera_3d()
+
+
+# The course's clear heights, in course metres, read from colliders.json: the crouch bar's underside, the tunnel roof's
+# underside and the platforms' height.
+func _course_limits() -> Dictionary:
+	var out := {"bar": INF, "roof": INF, "plat": 0.0, "gap": 0.0}
+	var near: Array = []
+	var far: Array = []
+	var cols: Array = (
+		JSON
+		. parse_string(
+			FileAccess.get_file_as_string(
+				(
+					OS.get_environment("COURSE_COLLIDERS")
+					if OS.get_environment("COURSE_COLLIDERS") != ""
+					else "res://vsk_model_explorer/course/colliders.json"
+				)
+			)
+		)
+		. colliders
+	)
+	for c in cols:
+		var p: Array = c.prim
+		var n: String = c.name
+		if n.begins_with("Beam") and p[2] > 1.0:
+			out.bar = min(out.bar, p[2] - p[5])
+		elif n.begins_with("Tunnel") and int(p[0]) == 2:
+			out.roof = min(out.roof, p[2] - p[5])
+		elif n.begins_with("PlatformNear"):
+			out.plat = p[2] + p[5]
+			near = p
+		elif n.begins_with("PlatformFar"):
+			far = p
+	if not near.is_empty() and not far.is_empty():
+		out.gap = absf(far[3] - near[3]) - (near[6] + far[6])
+	return out
 
 
 func _lowest_bone_y() -> float:

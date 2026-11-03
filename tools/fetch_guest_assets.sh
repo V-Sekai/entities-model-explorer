@@ -19,7 +19,7 @@ set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-run=$(gh run list -R V-Sekai-fire/interactor-motion-matching-guest --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
+run=$(gh api "repos/V-Sekai-fire/interactor-motion-matching-guest/actions/artifacts?per_page=20" --jq '[.artifacts[]|select(.workflow_run.head_branch=="main" and .expired==false)][0].workflow_run.id')
 gh run download "$run" -R V-Sekai-fire/interactor-motion-matching-guest -D "$work/mm"
 cp "$work"/mm/mm-elf-*/mm.elf "$here/mm.elf"
 sk=$(gh api "repos/V-Sekai-fire/interactor-skintokens-guest/actions/artifacts?per_page=20" --jq '[.artifacts[]|select(.workflow_run.head_branch=="main" and .expired==false)]|sort_by(.created_at)|last|"\(.workflow_run.id) \(.name)"')

@@ -105,11 +105,11 @@ P = [
     ("bump_gap", "500 mm", "Floor between two bumps"),
     ("bumps_x", "stones_x + stones_len + between", "Where the bumps start"),
     ("bumps_len", "4 * bump_w + 3 * bump_gap", "Bumps length"),
-    ("beam_clear", "1300 mm", "Clear height under the crouch beam"),
+    ("beam_clear", "1650 mm", "Clear height under the crouch beam"),
     ("beam_d", "300 mm", "Crouch beam depth along the course"),
     ("beam_t", "200 mm", "Crouch beam thickness"),
     ("post", "150 mm", "Beam post and tunnel wall thickness"),
-    ("tunnel_clear", "700 mm", "Clear height inside the crawl tunnel"),
+    ("tunnel_clear", "600 mm", "Clear height inside the crawl tunnel (the military pentathlon wire net is 0.45 to 0.5 m; the belly crawl clears 0.562 m)"),
     ("tunnel_inner", "1500 mm", "Clear width inside the crawl tunnel"),
     ("tunnel_len", "2500 mm", "Crawl tunnel length"),
     ("roof", "120 mm", "Tunnel roof thickness"),
@@ -233,14 +233,14 @@ outline("Beam", "YZ", "duck_x", ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8"]
         [[-1950, 0], [-1950, 1500], [1950, 1500], [1950, 0], [1800, 0], [1800, 1300],
          [-1800, 1300], [-1800, 0]],
         [length("g2", "course_w + 2 * post"), length("g4", "post"), length("g1", "beam_clear + beam_t"),
-         v("origin", "g6.start", "beam_clear"), h("origin", "g1.start", "course_w / 2 + post")],
-        equal=[("g4", "g8")])
+         v("origin", "g6.start", "beam_clear")],
+        equal=[("g4", "g8")], pin="g1.start", at="course_w / 2 + post")  # pinned to the floor: else a taller beam sinks into it
 extrude("Beam", "beam_d", "Beam")
 outline("Tunnel", "YZ", "duck_x + beam_d + between", ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"],
         [[-900, 0], [-900, 820], [900, 820], [900, 0], [750, 0], [750, 700], [-750, 700], [-750, 0]],
         [length("n6", "tunnel_inner"), length("n4", "post"), v("origin", "n6.start", "tunnel_clear"),
-         length("n1", "tunnel_clear + roof"), h("origin", "n1.start", "tunnel_inner / 2 + post")],
-        equal=[("n4", "n8")])
+         length("n1", "tunnel_clear + roof")],
+        equal=[("n4", "n8")], pin="n1.start", at="tunnel_inner / 2 + post")
 extrude("Tunnel", "tunnel_len", "Tunnel")
 colour(["Beam", "Tunnel"], "#f2664c")
 
