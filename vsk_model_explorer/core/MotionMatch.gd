@@ -1372,6 +1372,10 @@ func _run_test() -> void:
 		var faces: Array[Vector2] = []
 		var face_at: Array = []
 		var step_frames := 0
+		var chk_head := -INF  # highest head bone, tallest back point, lowest-bone height and lowest ground in the stage
+		var chk_back := -INF
+		var chk_low := -INF
+		var chk_ground := INF
 		while t < step[3] and not (stage_stop.has(step[0]) and _last_world.z >= stage_stop[step[0]]):
 			await get_tree().process_frame
 			var dt := get_process_delta_time()
@@ -1393,6 +1397,13 @@ func _run_test() -> void:
 			# In units of the longest honest frame step: running for the 1/20 s frame cap.
 			leap = max(leap, step_m / (_run_speed * _scale / 20.0))
 			hips_prev = hw
+			if stage_stop.has(step[0]):
+				var hd := _skeleton.find_bone("J_Bip_C_Head")
+				if hd >= 0:
+					chk_head = max(chk_head, (_skeleton.global_transform * _skeleton.get_bone_global_pose(hd)).origin.y)
+				chk_back = max(chk_back, hw.y)
+				chk_low = max(chk_low, _lowest_bone_y())
+				chk_ground = min(chk_ground, _last_world.y)
 			if stage_stop.has(step[0]) and Engine.get_process_frames() % 12 == 0:
 				var bw := {}
 				for bn in ["J_Bip_C_Head", "J_Bip_L_Hand", "J_Bip_R_Hand", "J_Bip_L_Foot", "J_Bip_R_Foot", "J_Bip_L_LowerLeg"]:
@@ -1415,6 +1426,25 @@ func _run_test() -> void:
 				var f := _hips_forward()
 				faces.append(Vector2(f.x, f.z).normalized() * dt)
 				face_at.append([t, str(_keys[_clip])])
+		if stage_stop.has(step[0]):
+			var reached: bool = _last_world.z >= stage_stop[step[0]]
+			var verdict := reached
+			var detail := ""
+			var lim := _course_limits()
+			var head_top := 0.19 * _scale  # the head bone to the top of the head
+			match step[0]:
+				"duck":
+					var room: float = lim.bar * _scale - (chk_head + head_top)
+					verdict = verdict and room >= 0.0
+					detail = "head_top %.3f bar_underside %.3f room %.3f" % [chk_head + head_top, lim.bar * _scale, room]
+				"crawl":
+					var room: float = lim.roof * _scale - (chk_head + head_top)
+					verdict = verdict and room >= 0.0 and chk_low < lim.roof * _scale
+					detail = "head_top %.3f roof_underside %.3f room %.3f lowest_bone_max %.3f" % [chk_head + head_top, lim.roof * _scale, room, chk_low]
+				"jump":
+					verdict = verdict and air >= 0.2 and chk_ground >= 0.5 * lim.plat * _scale
+					detail = "air %.2f s lowest_ground %.3f platform %.3f" % [air, chk_ground, lim.plat * _scale]
+			print("COURSE-CHECK %s pass=%d reached=%d %s" % [step[0], 1 if verdict else 0, 1 if reached else 0, detail])
 		if stage_stop.has(step[0]):
 			print("COURSE-STAGE %s reached=%d z=%.2f stop=%.1f t=%.1f kind=%d" % [step[0], 1 if _last_world.z >= stage_stop[step[0]] else 0, _last_world.z, stage_stop[step[0]], t, _kind])
 		var moved: Vector3 = _last_world - p0
@@ -1661,6 +1691,23 @@ func _hips_forward() -> Vector3:
 # orbit video circles the view, else the current one.
 func _view_cam() -> Camera3D:
 	return _input_cam if _input_cam else get_viewport().get_camera_3d()
+
+
+# The course's clear heights, in course metres, read from colliders.json: the crouch bar's underside, the tunnel roof's
+# underside and the platforms' height.
+func _course_limits() -> Dictionary:
+	var out := {"bar": INF, "roof": INF, "plat": 0.0}
+	var cols: Array = JSON.parse_string(FileAccess.get_file_as_string("res://vsk_model_explorer/course/colliders.json")).colliders
+	for c in cols:
+		var p: Array = c.prim
+		var n: String = c.name
+		if n.begins_with("Beam") and p[2] > 1.0:
+			out.bar = min(out.bar, p[2] - p[5])
+		elif n.begins_with("Tunnel") and int(p[0]) == 2:
+			out.roof = min(out.roof, p[2] - p[5])
+		elif n.begins_with("PlatformNear"):
+			out.plat = p[2] + p[5]
+	return out
 
 
 func _lowest_bone_y() -> float:
