@@ -14,7 +14,7 @@ func set_material_view(mat: Material):
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	BtnClose.pressed.connect(_on_btn_close_pressed)
-	MatTree.item_activated.connect(_on_material_property_double_clicked.bind(MatTree))
+	MatTree.item_mouse_selected.connect(_on_property_clicked.bind(MatTree))   # one click opens a texture, as in the left column
 
 	if materialView != null:
 		MatNameLabel.text = materialView.resource_name
@@ -30,6 +30,11 @@ func _process(_delta):
 
 func _on_btn_close_pressed():
 	queue_free()
+
+
+func _on_property_clicked(_position: Vector2, button: int, tree: Tree) -> void:
+	if button == MOUSE_BUTTON_LEFT and tree.get_selected() != null:
+		_on_material_property_double_clicked(tree)
 
 
 func _on_material_property_double_clicked(tree: Tree):

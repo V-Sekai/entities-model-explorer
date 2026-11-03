@@ -550,11 +550,21 @@ func _on_material_item_double_clicked(tree: Tree):
 	var matItem: TreeItem = tree.get_selected()
 	var mat: Material = matItem.get_metadata(0)
 	if mat != null and mat is Material:
-		if matViewer != null:
+		if matViewer != null and is_instance_valid(matViewer):   # a closed viewer is a freed object
 			matViewer.queue_free()
 
 		matViewer = _card_popup(MaterialViewer.instantiate())
 		matViewer.set_material_view(mat)
+		# The scene file placed it at (314, 772), below the bottom of a 720 px window. It sits at a fixed
+		# spot instead: top left of the free area, right of the information panel.
+		var info := get_node_or_null("InfoPanel") as Control
+		var left := (info.get_global_rect().end.x if info != null and info.visible else 0.0) + CardStyle.MARGIN
+		matViewer.custom_minimum_size = Vector2(373, minf(473.0, get_viewport().size.y - 2.0 * CardStyle.MARGIN))   # the scene's own size, kept on screen
+		matViewer.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		matViewer.offset_left = left
+		matViewer.offset_right = left
+		matViewer.offset_top = CardStyle.MARGIN
+		matViewer.offset_bottom = CardStyle.MARGIN
 		add_child.call_deferred(matViewer)
 
 
