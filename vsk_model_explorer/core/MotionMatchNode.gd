@@ -37,7 +37,7 @@ func _process_animation_node(
 	if test_only or mm == null or delta <= 0.0:
 		return info
 	var r: PackedFloat32Array = mm.vmcall(
-		"mm_step", delta, velocity.x, velocity.y, NAN, mode, (maxi(jump_len_cm, 1) if jump else 0)
+		"mm_step", delta, velocity.x, velocity.y, NAN, mode, maxi(jump_len_cm, 1) if jump else 0
 	)
 	jump = false
 	jump_len_cm = 0

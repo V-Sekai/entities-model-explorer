@@ -1351,12 +1351,28 @@ func _run_test() -> void:
 			["approach", Vector2(0, 1), true, 60.0, 0.0, STAND, false],
 			["duck", Vector2(0, 1), false, 20.0, 0.0, CROUCH, false],
 			["stand_up", Vector2(0, 1), false, 10.0, 0.0, STAND, false],
-			["crawl", Vector2(0, 1), false, 20.0, 0.0, PRONE if OS.get_environment("MOVE_CRAWL") == "prone" else CRAWL, false],
+			[
+				"crawl",
+				Vector2(0, 1),
+				false,
+				20.0,
+				0.0,
+				PRONE if OS.get_environment("MOVE_CRAWL") == "prone" else CRAWL,
+				false
+			],
 			["to_gap", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
 			["jump", Vector2(0, 1), true, 10.0, 0.0, STAND, true],
 			["finish", Vector2(0, 1), true, 20.0, 0.0, STAND, false],
 		]
-		stage_stop = {"approach": 33.2, "duck": 35.0, "stand_up": 35.8, "crawl": 38.6, "to_gap": 40.6, "jump": 42.2, "finish": 44.8}
+		stage_stop = {
+			"approach": 33.2,
+			"duck": 35.0,
+			"stand_up": 35.8,
+			"crawl": 38.6,
+			"to_gap": 40.6,
+			"jump": 42.2,
+			"finish": 44.8
+		}
 	var ok := keys_ok and _test_loops()
 	for step in plan:
 		if only != "" and only != "course-stages" and not step[0] in only.split(","):
@@ -1392,7 +1408,9 @@ func _run_test() -> void:
 		var chk_back := -INF
 		var chk_low := -INF
 		var chk_ground := INF
-		while t < step[3] and not (stage_stop.has(step[0]) and _last_world.z >= stage_stop[step[0]]):
+		while (
+			t < step[3] and not (stage_stop.has(step[0]) and _last_world.z >= stage_stop[step[0]])
+		):
 			await get_tree().process_frame
 			var dt := get_process_delta_time()
 			t += dt
@@ -1416,17 +1434,56 @@ func _run_test() -> void:
 			if stage_stop.has(step[0]):
 				var hd := _skeleton.find_bone("J_Bip_C_Head")
 				if hd >= 0:
-					chk_head = max(chk_head, (_skeleton.global_transform * _skeleton.get_bone_global_pose(hd)).origin.y)
+					chk_head = max(
+						chk_head,
+						(_skeleton.global_transform * _skeleton.get_bone_global_pose(hd)).origin.y
+					)
 				chk_back = max(chk_back, hw.y)
 				chk_low = max(chk_low, _lowest_bone_y())
 				chk_ground = min(chk_ground, _last_world.y)
 			if stage_stop.has(step[0]) and Engine.get_process_frames() % 12 == 0:
 				var bw := {}
-				for bn in ["J_Bip_C_Head", "J_Bip_L_Hand", "J_Bip_R_Hand", "J_Bip_L_Foot", "J_Bip_R_Foot", "J_Bip_L_LowerLeg"]:
+				for bn in [
+					"J_Bip_C_Head",
+					"J_Bip_L_Hand",
+					"J_Bip_R_Hand",
+					"J_Bip_L_Foot",
+					"J_Bip_R_Foot",
+					"J_Bip_L_LowerLeg"
+				]:
 					var bi := _skeleton.find_bone(bn)
-					bw[bn] = snappedf((_skeleton.global_transform * _skeleton.get_bone_global_pose(bi)).origin.y, 0.001) if bi >= 0 else -9.0
-				print("STAGE-BONES %s scene_y=%.3f origin_y=%.3f scale=%.3f %s" % [step[0], _scene.global_transform.origin.y, _origin.y, _scale, str(bw)])
-				print("STAGE-FLOOR %s z=%.2f lowest_bone_y=%.3f char_y=%.3f hips_y=%.3f kind=%d clip=%s" % [step[0], _last_world.z, _lowest_bone_y(), _last_world.y, hw.y, _kind, str(_keys[_clip])])
+					bw[bn] = (
+						snappedf(
+							(
+								(_skeleton.global_transform * _skeleton.get_bone_global_pose(bi))
+								. origin
+								. y
+							),
+							0.001
+						)
+						if bi >= 0
+						else -9.0
+					)
+				print(
+					(
+						"STAGE-BONES %s scene_y=%.3f origin_y=%.3f scale=%.3f %s"
+						% [step[0], _scene.global_transform.origin.y, _origin.y, _scale, str(bw)]
+					)
+				)
+				print(
+					(
+						"STAGE-FLOOR %s z=%.2f lowest_bone_y=%.3f char_y=%.3f hips_y=%.3f kind=%d clip=%s"
+						% [
+							step[0],
+							_last_world.z,
+							_lowest_bone_y(),
+							_last_world.y,
+							hw.y,
+							_kind,
+							str(_keys[_clip])
+						]
+					)
+				)
 			if _kind == 4:
 				air += dt
 			var e := _pose_error()
@@ -1438,7 +1495,9 @@ func _run_test() -> void:
 				p0 = _last_world
 			else:
 				kind_all += dt
-				kind_ok += dt if _kind == step[5] or (step[5] == PRONE and _kind == MM_PRONE) else 0.0
+				kind_ok += (
+					dt if _kind == step[5] or (step[5] == PRONE and _kind == MM_PRONE) else 0.0
+				)
 				var f := _hips_forward()
 				faces.append(Vector2(f.x, f.z).normalized() * dt)
 				face_at.append([t, str(_keys[_clip])])
@@ -1452,17 +1511,43 @@ func _run_test() -> void:
 				"duck":
 					var room: float = lim.bar * _scale - (chk_head + head_top)
 					verdict = verdict and room >= 0.0
-					detail = "head_top %.3f bar_underside %.3f room %.3f" % [chk_head + head_top, lim.bar * _scale, room]
+					detail = (
+						"head_top %.3f bar_underside %.3f room %.3f"
+						% [chk_head + head_top, lim.bar * _scale, room]
+					)
 				"crawl":
 					var room: float = lim.roof * _scale - (chk_head + head_top)
 					verdict = verdict and room >= 0.0 and chk_low < lim.roof * _scale
-					detail = "head_top %.3f roof_underside %.3f room %.3f lowest_bone_max %.3f" % [chk_head + head_top, lim.roof * _scale, room, chk_low]
+					detail = (
+						"head_top %.3f roof_underside %.3f room %.3f lowest_bone_max %.3f"
+						% [chk_head + head_top, lim.roof * _scale, room, chk_low]
+					)
 				"jump":
 					verdict = verdict and air >= 0.2 and chk_ground >= 0.5 * lim.plat * _scale
-					detail = "air %.2f s lowest_ground %.3f platform %.3f" % [air, chk_ground, lim.plat * _scale]
-			print("COURSE-CHECK %s pass=%d reached=%d %s" % [step[0], 1 if verdict else 0, 1 if reached else 0, detail])
+					detail = (
+						"air %.2f s lowest_ground %.3f platform %.3f"
+						% [air, chk_ground, lim.plat * _scale]
+					)
+			print(
+				(
+					"COURSE-CHECK %s pass=%d reached=%d %s"
+					% [step[0], 1 if verdict else 0, 1 if reached else 0, detail]
+				)
+			)
 		if stage_stop.has(step[0]):
-			print("COURSE-STAGE %s reached=%d z=%.2f stop=%.1f t=%.1f kind=%d" % [step[0], 1 if _last_world.z >= stage_stop[step[0]] else 0, _last_world.z, stage_stop[step[0]], t, _kind])
+			print(
+				(
+					"COURSE-STAGE %s reached=%d z=%.2f stop=%.1f t=%.1f kind=%d"
+					% [
+						step[0],
+						1 if _last_world.z >= stage_stop[step[0]] else 0,
+						_last_world.z,
+						stage_stop[step[0]],
+						t,
+						_kind
+					]
+				)
+			)
 		var moved: Vector3 = _last_world - p0
 		var secs: float = step[3] * 0.5
 		var speed: float = Vector2(moved.x, moved.z).length() / secs
@@ -1715,7 +1800,19 @@ func _course_limits() -> Dictionary:
 	var out := {"bar": INF, "roof": INF, "plat": 0.0, "gap": 0.0}
 	var near: Array = []
 	var far: Array = []
-	var cols: Array = JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment("COURSE_COLLIDERS") if OS.get_environment("COURSE_COLLIDERS") != "" else "res://vsk_model_explorer/course/colliders.json")).colliders
+	var cols: Array = (
+		JSON
+		. parse_string(
+			FileAccess.get_file_as_string(
+				(
+					OS.get_environment("COURSE_COLLIDERS")
+					if OS.get_environment("COURSE_COLLIDERS") != ""
+					else "res://vsk_model_explorer/course/colliders.json"
+				)
+			)
+		)
+		. colliders
+	)
 	for c in cols:
 		var p: Array = c.prim
 		var n: String = c.name
