@@ -13,7 +13,8 @@ extends Node3D
 # tools/course/collider_check.gd.
 
 const SCENE := "res://vsk_model_explorer/course/obstacle_course.glb"
-const COLLIDERS := "res://vsk_model_explorer/course/colliders.json"
+# COURSE_COLLIDERS=<path> reads another colliders file (a search over course parameters runs many courses at once).
+var COLLIDERS: String = OS.get_environment("COURSE_COLLIDERS") if OS.get_environment("COURSE_COLLIDERS") != "" else "res://vsk_model_explorer/course/colliders.json"
 const MUJOCO_ELF := "res://mujoco.elf"
 # A sign above each station, keyed by the start of its SolidCraft body names.
 const SIGNS := {

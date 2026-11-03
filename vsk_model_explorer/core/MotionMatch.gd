@@ -1697,7 +1697,7 @@ func _view_cam() -> Camera3D:
 # underside and the platforms' height.
 func _course_limits() -> Dictionary:
 	var out := {"bar": INF, "roof": INF, "plat": 0.0}
-	var cols: Array = JSON.parse_string(FileAccess.get_file_as_string("res://vsk_model_explorer/course/colliders.json")).colliders
+	var cols: Array = JSON.parse_string(FileAccess.get_file_as_string(OS.get_environment("COURSE_COLLIDERS") if OS.get_environment("COURSE_COLLIDERS") != "" else "res://vsk_model_explorer/course/colliders.json")).colliders
 	for c in cols:
 		var p: Array = c.prim
 		var n: String = c.name
