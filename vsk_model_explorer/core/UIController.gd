@@ -14,6 +14,13 @@ signal wireframe_toggled(on: bool)
 var wireframe_on := false
 var grid_hidden := false
 var exploded := false
+# X: every mesh of the loaded model turns translucent, so the parts inside (the body under a garment)
+# show through. Session only, like Explode: a model that opens see-through would look broken.
+var xray_on := false
+const XRAY_ALPHA := 0.35
+# Per mesh: [mesh, surface, the override it had]; the translucent copies replace the overrides only
+# while x-ray is on, so no shared material is edited.
+var _xray_saved: Array = []
 
 var animationPlayers: Array[Node]
 # The animation list's Loop toggle: on (the default) repeats the clip; off plays it once and then
@@ -103,6 +110,13 @@ func _process(_delta):
 	if Input.is_action_just_pressed("explode_meshes"):
 		_set_exploded(not exploded)
 
+	# X is prone in walk mode (MotionMatch.gd), so it does nothing there.
+	if (
+		Input.is_action_just_pressed("toggle_xray")
+		and get_tree().get_nodes_in_group("walk_mode").is_empty()
+	):
+		_set_xray(not xray_on)
+
 	if Input.is_action_just_pressed("toggle_grid"):
 		grid_hidden = not grid_hidden
 		_set_grid_hidden(grid_hidden)
@@ -144,6 +158,8 @@ func _on_root_gltf_start_to_load():
 
 func _on_root_gltf_is_loaded(success, gltf: Node):
 	Input.action_press("close_popup")
+	_xray_restore()  # the old model is going; the new one opens solid
+	xray_on = false
 	if exploder.is_exploded():
 		exploder.implode()
 		exploded = false
@@ -702,6 +718,43 @@ func _set_exploded(on: bool) -> void:
 		exploder.print_layout()
 	else:
 		exploder.implode()
+
+
+# Translucent copies of every StandardMaterial3D on the model's meshes (a shader material keeps its
+# own look). The copy keeps the textures and colour and only adds alpha, drawn through the engine's
+# order-independent transparency (project setting rendering/oit/enabled).
+func _set_xray(on: bool) -> void:
+	_xray_restore()
+	xray_on = on
+	if not on:
+		return
+	var roots: Array = []
+	roots.append_array(get_tree().get_nodes_in_group(GlobalSignal.FBX_GROUP))
+	roots.append_array(get_tree().get_nodes_in_group(GlobalSignal.GLTF_GROUP))
+	for root in roots:
+		var meshes: Array = root.find_children("*", "MeshInstance3D", true, false)
+		if root is MeshInstance3D:
+			meshes.append(root)
+		for mi: MeshInstance3D in meshes:
+			if mi.mesh == null:
+				continue
+			for s in mi.mesh.get_surface_count():
+				var active: Material = mi.get_active_material(s)
+				if not (active is StandardMaterial3D):
+					continue
+				var copy := (active as StandardMaterial3D).duplicate() as StandardMaterial3D
+				copy.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				var c := copy.albedo_color
+				copy.albedo_color = Color(c.r, c.g, c.b, c.a * XRAY_ALPHA)
+				_xray_saved.append([mi, s, mi.get_surface_override_material(s)])
+				mi.set_surface_override_material(s, copy)
+
+
+func _xray_restore() -> void:
+	for e in _xray_saved:
+		if is_instance_valid(e[0]):
+			e[0].set_surface_override_material(e[1], e[2])
+	_xray_saved.clear()
 
 
 func _set_grid_hidden(button_pressed):

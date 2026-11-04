@@ -24,7 +24,7 @@ V-Sekai Model Explorer is a comprehensive 3D model viewer, designed with the pow
 2. **Animation Playback**: Play back animations within the model for a dynamic viewing experience.
 3. **Interactive Controls**: Navigate around the model with ease using intuitive controls.
 4. **Double-Click Action**: Get a closer look at any part of the model with a simple double-click.
-5. **Wireframe/Explode/Hide Grid**: Press L for wireframe, E to take the model apart into its separate pieces and G to hide the grid; the controls card lists every key.
+5. **Wireframe/Explode/Hide Grid**: Press L for wireframe, E to take the model apart into its separate pieces, G to hide the grid and X for x-ray (every mesh turns translucent so the parts inside show through; X is prone in walk mode, so it does nothing there); the controls card lists every key.
 
 ## MCP server
 
