@@ -119,9 +119,10 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/sandbox"
-          run=$(gh run list -R V-Sekai-fire/godot-sandbox --branch "$SANDBOX_BRANCH" --status success \
-                  --limit 30 --json databaseId,workflowName \
-                  --jq '[.[]|select(.workflowName=="Build MacOS" or .workflowName=="Build Windows" or .workflowName=="Build Linux")]|.[].databaseId' | sort -u)
+          # godot-sandbox builds every platform in one workflow, "Builds" (it used to be Build MacOS/Windows/Linux).
+          # Ask for that workflow by name: a plain run list is mostly Cache Cleanup runs and misses it.
+          run=$(gh run list -R V-Sekai-fire/godot-sandbox --branch "$SANDBOX_BRANCH" --workflow Builds --status success \
+                  --limit 5 --json databaseId --jq '.[].databaseId')
           [ -n "$run" ] || { echo "no green godot-sandbox build on $SANDBOX_BRANCH"; exit 1; }
           got=0
           for r in $run; do
