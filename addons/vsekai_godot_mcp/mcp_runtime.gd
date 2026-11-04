@@ -98,7 +98,7 @@ func set_listening(on: bool) -> bool:
 		return false
 	if on:
 		if _http == null:
-			_start_http()
+			_start_http(true)
 		elif not _http.is_listening():
 			_http.start(_port, HOST)
 	elif _http != null:
@@ -106,10 +106,11 @@ func set_listening(on: bool) -> bool:
 	return is_listening()
 
 
-func _start_http() -> void:
+## asked: the viewer's slider asked for the server, so listen_by_default (the start-up choice) does not apply.
+func _start_http(asked := false) -> void:
 	var port := _resolve_port()
 	if port < 0:
-		if not ProjectSettings.get_setting(SETTINGS + "listen_by_default", true):
+		if not asked and not ProjectSettings.get_setting(SETTINGS + "listen_by_default", true):
 			return
 		port = HTTP_PORT_DEFAULT
 	if port == 0:
