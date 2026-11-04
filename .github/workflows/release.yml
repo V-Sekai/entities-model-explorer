@@ -1,9 +1,13 @@
 name: Release
 
-# Push a tag to build the walk-mode viewer for macOS, Windows and Linux and publish a GitHub release:
-#   git tag v20261104-dev.1 && git push origin v20261104-dev.1
-# A tag with a "-" in it (-dev.N, -beta.N, -rc.N) is a pre-release; the bare v<YYYYMMDD> is a full release.
-# Run by hand (workflow_dispatch) it builds the same packages and uploads them as workflow artifacts only.
+# Run it (workflow_dispatch) on the commit to release. Nobody types a tag: the tag is computed from the commit
+# (RFD66606-2312, "release tags are go pseudo-versions"), v0.0.0-<UTC committer time YYYYMMDDhhmmss>-<12 hex>,
+# so it sorts by time in a file listing and parses as a version in Mix, Cargo, npm and Go. The `stage` input
+# (dev, beta, rc, release) is not in the tag: it moves the stage pointer tag of that name to the commit and sets
+# the GitHub pre-release flag (everything but release). `publish: false` builds the packages and uploads them as
+# workflow artifacts only. The CITATION.cff that ships in the package carries the per-build half of the release
+# record: version (the tag), commit, date-released and the stage.
+#   gh workflow run release.yml -R V-Sekai-fire/entities-model-explorer -f stage=dev
 #
 # Inputs come from the same places tools/release.exs uses: the double-precision engine from a
 # V-Sekai-fire/service-godot-build release, the godot-sandbox libraries and the guest ELFs from green CI
@@ -21,11 +25,17 @@ name: Release
 # absent (a run from a fork) the macOS zip is published unsigned and the step says so.
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
+      stage:
+        description: "Stage pointer to move to this commit; everything but release is a GitHub pre-release"
+        type: choice
+        options: [dev, beta, rc, release]
+        default: dev
+      publish:
+        description: "Create the tag and the GitHub release (off: artifacts only)"
+        type: boolean
+        default: true
       engine_tag:
         description: "service-godot-build release to take the double-precision engine from"
         default: "v20261019-double.2"
@@ -37,13 +47,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 env:
   ENGINE_TAG: ${{ inputs.engine_tag || 'v20261019-double.2' }}
   SANDBOX_BRANCH: ${{ inputs.sandbox_branch || 'main' }}
   APP: walk-mode-viewer
+  STAGE: ${{ inputs.stage || 'dev' }}
   GH_TOKEN: ${{ github.token }}
   # secrets.* is not allowed in a step's `if`; this env carries the answer.
   HAVE_APPLE_SECRETS: ${{ secrets.APPLE_DEVID_P12 != '' }}
@@ -52,8 +63,26 @@ jobs:
   package:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+
+      # The tag is the commit's Go pseudo-version, computed exactly as RFD66606-2312 does. It must not exist yet
+      # on another commit; the same commit re-run reuses it (the publish job then refuses a second release).
+      - name: Compute the release tag from the commit
+        id: tag
+        run: |
+          set -eu
+          tag=$(TZ=UTC git log -1 --format='v0.0.0-%cd-%h' --date=format-local:%Y%m%d%H%M%S --abbrev=12)
+          echo "$tag" | grep -Eq '^v0\.0\.0-[0-9]{14}-[0-9a-f]{12}$' || { echo "bad tag $tag"; exit 1; }
+          if git fetch -q origin "refs/tags/$tag:refs/tags/$tag" 2>/dev/null; then
+            at=$(git rev-list -n1 "$tag")
+            [ "$at" = "$GITHUB_SHA" ] || { echo "tag $tag already points at $at, not $GITHUB_SHA"; exit 1; }
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "Release tag: $tag, stage: $STAGE" >> "$GITHUB_STEP_SUMMARY"
 
       # github.token is scoped to this repo. Artifacts of godot-sandbox and the guest repos need actions:read
       # THERE, so mint an installation token from the persona App (one hour, this installation only).
@@ -123,7 +152,7 @@ jobs:
           git clone -q --depth 1 --filter=blob:none --sparse \
             https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
           git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
-          ls -la *.elf
+          ls -la ./*.elf
 
       - name: Notices
         run: |
@@ -142,6 +171,12 @@ jobs:
             'authors:' \
             '  - name: "V-Sekai contributors"' \
             "repository-code: \"https://github.com/${GITHUB_REPOSITORY}\"" \
+            "version: \"$TAG\"" \
+            "commit: \"$GITHUB_SHA\"" \
+            "date-released: \"$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d)\"" \
+            'identifiers:' \
+            '  - type: other' \
+            "    value: \"stage:$STAGE\"" \
             > "$RUNNER_TEMP/notices/CITATION.cff"
 
       - name: Export the pck
@@ -165,7 +200,7 @@ jobs:
           mkdir -p dist
           cp "$RUNNER_TEMP/out/walk-mode/$APP"-*.zip "$RUNNER_TEMP/out/walk-mode/$APP"-*.tar dist/
           # Name the archives after the tag: walk-mode-viewer-<tag>-<os>-<arch>.<ext>
-          tag="${GITHUB_REF_NAME//\//-}"
+          tag="$TAG"
           cd dist
           for f in "$APP"-*; do mv "$f" "$APP-$tag-${f#"$APP"-}"; done
           sha256sum -- * > SHA256SUMS
@@ -215,8 +250,7 @@ jobs:
             <key>com.apple.security.cs.disable-library-validation</key><true/>
           </dict></plist>
           PLIST
-          tag="${GITHUB_REF_NAME//\//-}"
-          zip="dist/$APP-$tag-macos-arm64.zip"
+          zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
           # Nested code first (the GDExtension framework), then the executable with the entitlements.
@@ -239,18 +273,26 @@ jobs:
 
   publish:
     needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ inputs.publish != false }}
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.package.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: ${{ env.APP }}-packages
           path: dist
-      - name: Create the release
+      # `gh release create --target` makes the tag on the commit the workflow ran on. Everything but the
+      # release stage is a pre-release. The stage pointer tag then moves to the same commit (RFD 2312 part 2).
+      - name: Create the release and move the stage pointer
         run: |
           set -eu
+          ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $TAG exists"; exit 1; }
           flags=""
-          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" $flags \
-            --title "Model Explorer $GITHUB_REF_NAME" --generate-notes \
+          [ "$STAGE" = release ] || flags="--prerelease"
+          gh release create "$TAG" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
+            --title "Model Explorer $TAG ($STAGE)" --generate-notes \
             --notes "Walk mode viewer for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). The macOS package is signed with a Developer ID and notarized; Windows is unsigned, so SmartScreen will warn. Verify with SHA256SUMS."
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Stage pointer $STAGE -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
