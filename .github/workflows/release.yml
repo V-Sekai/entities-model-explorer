@@ -90,7 +90,7 @@ jobs:
         id: app
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.PERSONA_APP_ID }}
+          client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
           owner: V-Sekai-fire
 
