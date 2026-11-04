@@ -7,8 +7,18 @@ name: Release
 #
 # Inputs come from the same places tools/release.exs uses: the double-precision engine from a
 # V-Sekai-fire/service-godot-build release, the godot-sandbox libraries and the guest ELFs from green CI
-# runs of their repos. The packages are NOT code-signed or notarized (the Mac Developer ID is on the
-# maintainer's Mac), and the macOS build is Apple silicon only because the engine has no Intel build.
+# runs of their repos. The macOS build is Apple silicon only because the engine has no Intel build.
+#
+# Tokens the repo is given (org Actions secrets, visibility "selected", scoped to this repo; the values come
+# from OpenBao and are written with `gh secret set --org V-Sekai-fire --repos entities-model-explorer`):
+#   PERSONA_APP_ID, PERSONA_APP_PRIVATE_KEY   the v-sekai-fire-persona GitHub App. github.token cannot download
+#                                             Actions artifacts of ANOTHER repo (even a public one), so the fetch
+#                                             steps mint a one-hour installation token from the App instead.
+#   APPLE_DEVID_P12, APPLE_DEVID_P12_PASSWORD "Developer ID Application" certificate and key as a .p12.
+#   APPLE_NOTARY_KEY_P8, APPLE_NOTARY_KEY_ID, APPLE_NOTARY_ISSUER_ID   App Store Connect API key.
+# The macOS package is signed (hardened runtime, Godot's GDExtension entitlements) and notarized with rcodesign
+# (indygreg/apple-platform-rs) on the Linux runner: no macOS runner, no Xcode. When the Apple secrets are
+# absent (a run from a fork) the macOS zip is published unsigned and the step says so.
 
 on:
   push:
@@ -35,6 +45,8 @@ env:
   SANDBOX_BRANCH: ${{ inputs.sandbox_branch || 'main' }}
   APP: walk-mode-viewer
   GH_TOKEN: ${{ github.token }}
+  # secrets.* is not allowed in a step's `if`; this env carries the answer.
+  HAVE_APPLE_SECRETS: ${{ secrets.APPLE_DEVID_P12 != '' }}
 
 jobs:
   package:
@@ -43,7 +55,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # github.token is scoped to this repo. Artifacts of godot-sandbox and the guest repos need actions:read
+      # THERE, so mint an installation token from the persona App (one hour, this installation only).
+      - name: Mint a GitHub App token for the other repos
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PERSONA_APP_ID }}
+          private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
+          owner: V-Sekai-fire
+
       - name: Fetch the double-precision engine
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/engine"
@@ -61,6 +85,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
 
       - name: Fetch the godot-sandbox native libraries
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/sandbox"
@@ -88,6 +114,8 @@ jobs:
           [ "$got" = 3 ] || { echo "found $got of 3 sandbox libraries"; ls -la "$RUNNER_TEMP/sandbox"; exit 1; }
 
       - name: Fetch the guest programs and the walk data
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           tools/fetch_guest_assets.sh
@@ -149,6 +177,59 @@ jobs:
           unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
           tar -tf "$APP-$tag-linux-x86_64.tar" | grep -q "$APP.pck"
 
+      # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then notarize.
+      # rcodesign does both from Linux; a zip of a signed executable and framework is an accepted notary asset.
+      - name: Sign and notarize the macOS package (rcodesign)
+        if: env.HAVE_APPLE_SECRETS == 'true'
+        env:
+          APPLE_DEVID_P12: ${{ secrets.APPLE_DEVID_P12 }}
+          APPLE_DEVID_P12_PASSWORD: ${{ secrets.APPLE_DEVID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          RCODESIGN_VERSION: "0.29.0"
+          RCODESIGN_SHA256: "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002"
+        run: |
+          set -eu
+          umask 077
+          S="$RUNNER_TEMP/sign"; mkdir -p "$S/bin" "$S/pkg"
+          # rcodesign, pinned by hash.
+          a="apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL -o "$S/$a" "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$RCODESIGN_VERSION/$a"
+          echo "$RCODESIGN_SHA256  $S/$a" | sha256sum -c
+          tar -xzf "$S/$a" -C "$S/bin" --strip-components=1
+          RC="$S/bin/rcodesign"; "$RC" --version
+          # Credentials to files that only this step reads; the runner's $RUNNER_TEMP is wiped with the job.
+          printf '%s' "$APPLE_DEVID_P12" | base64 -d > "$S/devid.p12"
+          printf '%s' "$APPLE_DEVID_P12_PASSWORD" > "$S/p12.pw"
+          printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$S/AuthKey.p8"
+          "$RC" encode-app-store-connect-api-key -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
+          # Entitlements from the Godot export doc for a GDExtension-bearing build.
+          cat > "$S/entitlements.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>com.apple.security.cs.allow-jit</key><true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+            <key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+            <key>com.apple.security.cs.disable-library-validation</key><true/>
+          </dict></plist>
+          PLIST
+          tag="${GITHUB_REF_NAME//\//-}"
+          zip="dist/$APP-$tag-macos-arm64.zip"
+          unzip -q "$zip" -d "$S/pkg"
+          sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
+          # Nested code first (the GDExtension framework), then the executable with the entitlements.
+          sign "$S/pkg"/libgodot_riscv.macos.*.framework
+          sign --entitlements-xml-path "$S/entitlements.plist" "$S/pkg/$APP"
+          "$RC" verify "$S/pkg/$APP"
+          rm -f "$zip"
+          (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
+          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
+          rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+          echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP }}-packages
@@ -172,4 +253,4 @@ jobs:
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" $flags \
             --title "Model Explorer $GITHUB_REF_NAME" --generate-notes \
-            --notes "Walk mode viewer for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). Unsigned: macOS Gatekeeper and Windows SmartScreen will warn. Verify with SHA256SUMS."
+            --notes "Walk mode viewer for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). The macOS package is signed with a Developer ID and notarized; Windows is unsigned, so SmartScreen will warn. Verify with SHA256SUMS."
