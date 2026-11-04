@@ -1,0 +1,175 @@
+name: Release
+
+# Push a tag to build the walk-mode viewer for macOS, Windows and Linux and publish a GitHub release:
+#   git tag v20261104-dev.1 && git push origin v20261104-dev.1
+# A tag with a "-" in it (-dev.N, -beta.N, -rc.N) is a pre-release; the bare v<YYYYMMDD> is a full release.
+# Run by hand (workflow_dispatch) it builds the same packages and uploads them as workflow artifacts only.
+#
+# Inputs come from the same places tools/release.exs uses: the double-precision engine from a
+# V-Sekai-fire/service-godot-build release, the godot-sandbox libraries and the guest ELFs from green CI
+# runs of their repos. The packages are NOT code-signed or notarized (the Mac Developer ID is on the
+# maintainer's Mac), and the macOS build is Apple silicon only because the engine has no Intel build.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      engine_tag:
+        description: "service-godot-build release to take the double-precision engine from"
+        default: "v20261019-double.2"
+      sandbox_branch:
+        description: "godot-sandbox branch to take the native libraries from"
+        default: "main"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ENGINE_TAG: ${{ inputs.engine_tag || 'v20261019-double.2' }}
+  SANDBOX_BRANCH: ${{ inputs.sandbox_branch || 'main' }}
+  APP: walk-mode-viewer
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the double-precision engine
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/engine"
+          cd "$RUNNER_TEMP/engine"
+          for f in godot.linuxbsd.editor.double.x86_64 \
+                   godot.linuxbsd.template_release.double.x86_64 \
+                   godot.macos.template_release.double.arm64 \
+                   godot.windows.template_release.double.x86_64.llvm.exe SHA256SUMS; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/service-godot-build -p "$f"
+          done
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 4 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          sha256sum -c wanted.sums
+          chmod +x ./godot.*
+          cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
+
+      - name: Fetch the godot-sandbox native libraries
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/sandbox"
+          run=$(gh run list -R V-Sekai-fire/godot-sandbox --branch "$SANDBOX_BRANCH" --status success \
+                  --limit 30 --json databaseId,workflowName \
+                  --jq '[.[]|select(.workflowName=="Build MacOS" or .workflowName=="Build Windows" or .workflowName=="Build Linux")]|.[].databaseId' | sort -u)
+          [ -n "$run" ] || { echo "no green godot-sandbox build on $SANDBOX_BRANCH"; exit 1; }
+          got=0
+          for r in $run; do
+            for pair in macos-universal:macos.template_release.double.universal.framework \
+                        windows-x86_64:windows.template_release.double.x86_64.dll \
+                        linux-x86_64:linux.template_release.double.x86_64.so; do
+              art=godot-sandbox-${pair%%:*}-double
+              dest="$RUNNER_TEMP/sandbox/libgodot_riscv.${pair#*:}"
+              [ ! -e "$dest" ] || continue
+              mkdir -p "$RUNNER_TEMP/dl"
+              if gh run download "$r" -R V-Sekai-fire/godot-sandbox -n "$art" -D "$RUNNER_TEMP/dl/$art" 2>/dev/null; then
+                f=$(find "$RUNNER_TEMP/dl/$art" -maxdepth 2 -name "libgodot_riscv.${pair#*:}" | head -1)
+                [ -n "$f" ] || { echo "$art lacks libgodot_riscv.${pair#*:}"; find "$RUNNER_TEMP/dl/$art"; exit 1; }
+                cp -R "$f" "$dest"; got=$((got+1))
+                echo "libgodot_riscv.${pair#*:} from run $r"
+              fi
+            done
+          done
+          [ "$got" = 3 ] || { echo "found $got of 3 sandbox libraries"; ls -la "$RUNNER_TEMP/sandbox"; exit 1; }
+
+      - name: Fetch the guest programs and the walk data
+        run: |
+          set -eu
+          tools/fetch_guest_assets.sh
+          # The clip directories package_desktop.sh lays out into res://motion/mm/.
+          git clone -q --depth 1 --filter=blob:none --sparse \
+            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
+          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
+          ls -la *.elf
+
+      - name: Notices
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/notices"
+          cp LICENSE "$RUNNER_TEMP/notices/LICENSE.md"
+          printf '%s\n' \
+            "V-Sekai Model Explorer, walk mode viewer" \
+            "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} by the Release workflow." \
+            "Source and licences of the parts: https://github.com/${GITHUB_REPOSITORY}" \
+            > "$RUNNER_TEMP/notices/NOTICE"
+          printf '%s\n' \
+            'cff-version: 1.2.0' \
+            'message: "If you use this software, please cite it as below."' \
+            'title: "V-Sekai Model Explorer"' \
+            'authors:' \
+            '  - name: "V-Sekai contributors"' \
+            "repository-code: \"https://github.com/${GITHUB_REPOSITORY}\"" \
+            > "$RUNNER_TEMP/notices/CITATION.cff"
+
+      - name: Export the pck
+        run: |
+          set -eu
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
+          export ENGINE="$RUNNER_TEMP/engine" SANDBOX="$RUNNER_TEMP/sandbox"
+          export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 PERSONA_ELF="$PWD/persona.elf"
+          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
+          # package_desktop.sh archives HEAD, so the fetched build products stay out of it.
+          tools/package_desktop.sh pck "$RUNNER_TEMP/out"
+
+      - name: Package macOS, Windows and Linux
+        run: |
+          set -eu
+          export ENGINE="$RUNNER_TEMP/engine" SANDBOX="$RUNNER_TEMP/sandbox" NOTICES="$RUNNER_TEMP/notices"
+          mkdir -p "$RUNNER_TEMP/no-weights"
+          tools/package_desktop.sh package "$RUNNER_TEMP/out" "$RUNNER_TEMP/no-weights" walk-mode
+          mkdir -p dist
+          cp "$RUNNER_TEMP/out/walk-mode/$APP"-*.zip "$RUNNER_TEMP/out/walk-mode/$APP"-*.tar dist/
+          # Name the archives after the tag: walk-mode-viewer-<tag>-<os>-<arch>.<ext>
+          tag="${GITHUB_REF_NAME//\//-}"
+          cd dist
+          for f in "$APP"-*; do mv "$f" "$APP-$tag-${f#"$APP"-}"; done
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          # A package that cannot be read back is a failed build.
+          for z in *.zip; do unzip -tq "$z"; done
+          for t in *.tar; do tar -tf "$t" > /dev/null; done
+          unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.pck"
+          unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
+          tar -tf "$APP-$tag-linux-x86_64.tar" | grep -q "$APP.pck"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP }}-packages
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.APP }}-packages
+          path: dist
+      - name: Create the release
+        run: |
+          set -eu
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" $flags \
+            --title "Model Explorer $GITHUB_REF_NAME" --generate-notes \
+            --notes "Walk mode viewer for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). Unsigned: macOS Gatekeeper and Windows SmartScreen will warn. Verify with SHA256SUMS."
