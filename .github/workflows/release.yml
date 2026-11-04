@@ -240,7 +240,7 @@ jobs:
           printf '%s' "$APPLE_DEVID_P12" | base64 -d > "$S/devid.p12"
           printf '%s' "$APPLE_DEVID_P12_PASSWORD" > "$S/p12.pw"
           printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$S/AuthKey.p8"
-          "$RC" encode-app-store-connect-api-key -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
+          "$RC" encode-app-store-connect-api-key --config-file /dev/null -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
           # Entitlements from the Godot export doc for a GDExtension-bearing build.
           cat > "$S/entitlements.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -254,14 +254,14 @@ jobs:
           PLIST
           zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
-          sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
+          sign() { "$RC" sign --config-file /dev/null --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
           # Nested code first (the GDExtension framework), then the executable with the entitlements.
           sign "$S/pkg"/libgodot_riscv.macos.*.framework
           sign --entitlements-xml-path "$S/entitlements.plist" "$S/pkg/$APP"
-          "$RC" verify "$S/pkg/$APP"
+          "$RC" verify --config-file /dev/null "$S/pkg/$APP"
           rm -f "$zip"
           (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
-          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
+          "$RC" notary-submit --config-file /dev/null --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
           (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
           echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
