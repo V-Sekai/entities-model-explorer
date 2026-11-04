@@ -224,23 +224,23 @@ jobs:
           APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          RCODESIGN_VERSION: "0.29.0"
-          RCODESIGN_SHA256: "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002"
+          CODE_SIGN_VERSION: "0.29.0"
+          CODE_SIGN_SHA256: "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002"
         run: |
           set -eu
           umask 077
           S="$RUNNER_TEMP/sign"; mkdir -p "$S/bin" "$S/pkg"
           # rcodesign, pinned by hash.
-          a="apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
-          curl -fsSL -o "$S/$a" "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$RCODESIGN_VERSION/$a"
-          echo "$RCODESIGN_SHA256  $S/$a" | sha256sum -c
+          a="apple-codesign-$CODE_SIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL -o "$S/$a" "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$CODE_SIGN_VERSION/$a"
+          echo "$CODE_SIGN_SHA256  $S/$a" | sha256sum -c
           tar -xzf "$S/$a" -C "$S/bin" --strip-components=1
           RC="$S/bin/rcodesign"; "$RC" --version
           # Credentials to files that only this step reads; the runner's $RUNNER_TEMP is wiped with the job.
           printf '%s' "$APPLE_DEVID_P12" | base64 -d > "$S/devid.p12"
           printf '%s' "$APPLE_DEVID_P12_PASSWORD" > "$S/p12.pw"
           printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$S/AuthKey.p8"
-          "$RC" encode-app-store-connect-api-key --config-file /dev/null -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
+          "$RC" encode-app-store-connect-api-key -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
           # Entitlements from the Godot export doc for a GDExtension-bearing build.
           cat > "$S/entitlements.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -254,14 +254,14 @@ jobs:
           PLIST
           zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
-          sign() { "$RC" sign --config-file /dev/null --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
+          sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
           # Nested code first (the GDExtension framework), then the executable with the entitlements.
           sign "$S/pkg"/libgodot_riscv.macos.*.framework
           sign --entitlements-xml-path "$S/entitlements.plist" "$S/pkg/$APP"
-          "$RC" verify --config-file /dev/null "$S/pkg/$APP"
+          "$RC" verify "$S/pkg/$APP"
           rm -f "$zip"
           (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
-          "$RC" notary-submit --config-file /dev/null --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
+          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
           (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
           echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
