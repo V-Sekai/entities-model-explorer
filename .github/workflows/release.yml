@@ -134,7 +134,8 @@ jobs:
               [ ! -e "$dest" ] || continue
               mkdir -p "$RUNNER_TEMP/dl"
               if gh run download "$r" -R V-Sekai-fire/godot-sandbox -n "$art" -D "$RUNNER_TEMP/dl/$art" 2>/dev/null; then
-                f=$(find "$RUNNER_TEMP/dl/$art" -maxdepth 2 -name "libgodot_riscv.${pair#*:}" | head -1)
+                # The artifact lays the library out as addons/godot_sandbox/bin/<library>.
+              f=$(find "$RUNNER_TEMP/dl/$art" -name "libgodot_riscv.${pair#*:}" | head -1)
                 [ -n "$f" ] || { echo "$art lacks libgodot_riscv.${pair#*:}"; find "$RUNNER_TEMP/dl/$art"; exit 1; }
                 cp -R "$f" "$dest"; got=$((got+1))
                 echo "libgodot_riscv.${pair#*:} from run $r"
