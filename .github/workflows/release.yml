@@ -254,6 +254,27 @@ jobs:
           PLIST
           zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
+          # The sandbox framework ships as a bare directory; rcodesign signs a framework only as a bundle, so give it an Info.plist.
+          for fw in "$S/pkg"/libgodot_riscv.macos.*.framework; do
+          n=$(basename "$fw" .framework)
+          [ -f "$fw/$n" ] || { echo "$fw lacks its executable $n"; ls -laR "$fw"; exit 1; }
+          mkdir -p "$fw/Resources"
+          cat > "$fw/Resources/Info.plist" <<FWPLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>$n</string>
+          <key>CFBundleIdentifier</key><string>org.v-sekai.libgodot-riscv</string>
+          <key>CFBundleName</key><string>$n</string>
+          <key>CFBundlePackageType</key><string>FMWK</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+          <key>CFBundleShortVersionString</key><string>0.0.0</string>
+          <key>CFBundleVersion</key><string>0.0.0</string>
+          <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
+          <key>LSMinimumSystemVersion</key><string>10.13</string>
+          </dict></plist>
+          FWPLIST
+          done
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
           # Nested code first (the GDExtension framework), then the executable with the entitlements.
           sign "$S/pkg"/libgodot_riscv.macos.*.framework
