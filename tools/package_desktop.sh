@@ -114,7 +114,7 @@ EOF
     || { cat "$out/liltoon_pack.log"; exit 1; }
   "$G" $HL --path "$src" --export-pack Linux "$out/skintokens-viewer.pck" > "$out/export.log" 2>&1
   if grep -q "SCRIPT ERROR" "$out/export.log"; then echo "SCRIPT ERROR in export.log"; exit 1; fi
-  for f in skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd clips.tsv walk.f32 mm/skeleton.txt; do
+  for f in skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FdbServer.gd FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd clips.tsv walk.f32 mm/skeleton.txt; do
     grep -aq "$f" "$out/skintokens-viewer.pck" || { echo "pck lacks $f"; exit 1; }
   done
   echo "PCK-OK $(wc -c < "$out/skintokens-viewer.pck") bytes"
@@ -135,7 +135,7 @@ done
 for f in LICENSE.md NOTICE CITATION.cff; do
   [ -f "${NOTICES:-}/$f" ] || { echo "missing \$NOTICES/$f (from the viewer's HF download repo)"; exit 1; }
 done
-lay() { # <os> <runtime> <exe suffix> <library>
+lay() { # <os> <runtime> <exe suffix> <FoundationDB client> <server platform>
   d="$out/$variant/$1/$app"
   rm -rf "$out/$variant/$1" && mkdir -p "$d"
   [ -z "$weights" ] || mkdir -p "$d/w"
@@ -143,6 +143,9 @@ lay() { # <os> <runtime> <exe suffix> <library>
   # Godot loads the pck that has the name of the program.
   cp "$out/skintokens-viewer.pck" "$d/$app.pck"
   cp "$ENGINE/$4" "$d/"  # the FoundationDB client the runtime links, beside it
+  # The server and its command line sit beside the runtime; FdbServer.gd starts them. One name on every OS.
+  cp "$ENGINE/fdbserver.$5" "$d/fdbserver$3" && chmod +x "$d/fdbserver$3"
+  cp "$ENGINE/fdbcli.$5" "$d/fdbcli$3" && chmod +x "$d/fdbcli$3"
   cp "$ENGINE/LICENSE-model-explorer.txt" "$d/"
   cp "$NOTICES/LICENSE.md" "$NOTICES/NOTICE" "$NOTICES/CITATION.cff" "$d/"
   for f in $weights; do
@@ -154,11 +157,11 @@ lay() { # <os> <runtime> <exe suffix> <library>
   fi
 }
 lay macos godot.macos.template_release.double.arm64 "" \
-  libfdb_c.dylib
+  libfdb_c.dylib macos.arm64
 lay windows godot.windows.template_release.double.x86_64.llvm.exe .exe \
-  fdb_c.dll
+  fdb_c.dll windows.x86_64.exe
 lay linux godot.linuxbsd.template_release.double.x86_64 "" \
-  libfdb_c.so
+  libfdb_c.so linux.x86_64
 # Archives hold the files at the top level: Explorer and Archive Utility already extract into a folder
 # named after the archive, so a top folder inside it would give <app>-*/<app>/.
 o="$out/$variant"

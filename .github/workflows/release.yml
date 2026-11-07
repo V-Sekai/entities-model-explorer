@@ -49,6 +49,8 @@ concurrency:
 
 env:
   ENGINE_TAG: ${{ inputs.engine_tag || 'v0.0.0-20261106225526-d632cdf2be4c' }}
+  # The FoundationDB release fdbcli comes from; its server and client match the engine's (7.3).
+  FDB_RELEASE: 7.3.79-weftspun-dev.2
   APP: walk-mode-viewer
   STAGE: ${{ inputs.stage || 'dev' }}
   GH_TOKEN: ${{ github.token }}
@@ -109,6 +111,30 @@ jobs:
           sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
+
+      - name: Fetch the FoundationDB server and command line
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          # fdbserver ships in the engine release, beside the client it was built with.
+          for f in fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?fdbserver\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbserver"; cat SHA256SUMS; exit 1; }
+          sha256sum -c server.sums
+          # fdbcli is not in the engine release; it comes from the FoundationDB release the client comes from.
+          mkdir cli && cd cli
+          for f in fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe SHA256SUMS; do
+            gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
+          done
+          grep -E ' \*?fdbcli\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbcli"; cat SHA256SUMS; exit 1; }
+          sha256sum -c cli.sums
+          mv fdbcli.* ..
+          chmod +x ../fdbserver.* ../fdbcli.*
 
       - name: Fetch the guest programs and the walk data
         env:
@@ -171,7 +197,7 @@ jobs:
           tag="$TAG"
           cd dist
           for f in "$APP"-*; do mv "$f" "$APP-$tag-${f#"$APP"-}"; done
-          sha256sum -- * > SHA256SUMS
+          ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
           cat SHA256SUMS
           # A package that cannot be read back is a failed build.
           for z in *.zip; do unzip -tq "$z"; done
@@ -221,15 +247,17 @@ jobs:
           zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
-          # Nested code first (the FoundationDB client beside the executable), then the executable with the entitlements.
+          # Nested code first (the FoundationDB client, server and command line beside the executable), then the executable with the entitlements.
           sign "$S/pkg/libfdb_c.dylib"
+          sign "$S/pkg/fdbserver"
+          sign "$S/pkg/fdbcli"
           sign --entitlements-xml-path "$S/entitlements.plist" "$S/pkg/$APP"
           "$RC" verify "$S/pkg/$APP"
           rm -f "$zip"
           (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
           "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
-          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+          (cd dist && ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS && cat SHA256SUMS)
           echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -239,8 +267,60 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  publish:
+  verify:
     needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      APP: walk-mode-viewer
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.APP }}-packages
+          path: dist
+      # Unpack the package as a user would, then run its own app. Each case must print the expected
+      # FDB-SELFTEST verdict: an exit code alone proves nothing, since an app that cannot start also exits 1.
+      - name: The packaged server starts, answers SQLite, and stops with the app
+        shell: bash
+        run: |
+          # GitHub runs this with -e. The control cases are meant to exit 1, so -e must be off.
+          set +e
+          mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
+          case "$RUNNER_OS" in
+            Linux) tar -xf "$GITHUB_WORKSPACE"/dist/*-linux-x86_64.tar; exe=./$APP ;;
+            macOS) unzip -q "$GITHUB_WORKSPACE"/dist/*-macos-arm64.zip; exe=./$APP; chmod +x $APP fdbserver fdbcli ;;
+            Windows) 7z x -y "$GITHUB_WORKSPACE"/dist/*-windows-x86_64.zip > /dev/null; exe=./$APP.exe ;;
+          esac
+          ls -la
+          fails=0
+          run() { # <label> <want rc> <want regex> <bin dir or empty> [user args]
+            label=$1; want_rc=$2; want=$3; bin=$4; shift 4
+            if [ -n "$bin" ]; then export WEFT_FDB_BIN_DIR="$bin"; else unset WEFT_FDB_BIN_DIR; fi
+            export WEFT_FDB_STATE_DIR="$RUNNER_TEMP/fdb state"
+            rm -f "$WEFT_FDB_STATE_DIR/selftest-result.txt"
+            out=$(perl -e 'alarm 240; exec @ARGV' "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
+            # The verdict file, not stdout: the Windows runtime has no console.
+            line=$(head -1 "$WEFT_FDB_STATE_DIR/selftest-result.txt" 2>/dev/null)
+            echo "== $label: rc=$rc  $line"
+            if [ "$rc" = "$want_rc" ] && echo "$line" | grep -Eq "$want"; then echo "   ok"; else echo "   WRONG, wanted rc=$want_rc and /$want/"; echo "$out" | tail -15; fails=$((fails+1)); fi
+          }
+          mkdir "$RUNNER_TEMP/empty"
+          run "control: no fdbserver" 1 'FAIL plant=false mode=roundtrip fdbserver and fdbcli not found' "$RUNNER_TEMP/empty"
+          run "round trip through the packaged server" 0 'PASS plant=false mode=roundtrip fdbserver [0-9]+ on port' ""
+          run "second start reads the row the first wrote" 0 'PASS plant=false mode=read' "" --fdb-selftest-read
+          run "planted wrong value" 1 'FAIL plant=true mode=roundtrip read back' "" --fdb-selftest-plant
+          rm -rf "$RUNNER_TEMP/fdb state"
+          run "control: a fresh state has no row" 1 'FAIL plant=false mode=read no row from an earlier run' "" --fdb-selftest-read
+          echo "== no server left running"
+          if [ "$RUNNER_OS" = Windows ]; then if tasklist | grep -i fdbserver; then fails=$((fails+1)); else echo "   none"; fi; else if pgrep -l fdbserver; then fails=$((fails+1)); else echo "   none"; fi; fi
+          echo "failed cases: $fails"; exit $fails
+
+  publish:
+    needs: [package, verify]
     if: ${{ inputs.publish != false }}
     runs-on: ubuntu-latest
     env:
