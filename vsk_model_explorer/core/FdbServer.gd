@@ -19,7 +19,7 @@ signal finished(ok: bool)
 const CLUSTER_DESC := "weftviewer"
 const FALLBACK_PORT := 4791
 
-var state := "idle" # idle, starting, ready, failed
+var state := "idle"  # idle, starting, ready, failed
 var detail := ""
 var cluster_file := ""
 
@@ -114,7 +114,12 @@ func _port() -> int:
 # fdbcli exits 0 whether or not the database is up, so the answer is read from its text.
 func _available(cli: String, timeout_s: int) -> bool:
 	var out := []
-	OS.execute(cli, ["-C", cluster_file, "--exec", "status minimal", "--timeout", str(timeout_s)], out, true)
+	OS.execute(
+		cli,
+		["-C", cluster_file, "--exec", "status minimal", "--timeout", str(timeout_s)],
+		out,
+		true
+	)
 	return "\n".join(out).contains("The database is available")
 
 
@@ -140,11 +145,28 @@ func _run(dir: String) -> void:
 	var logs := dir.path_join("logs")
 	DirAccess.make_dir_recursive_absolute(data)
 	DirAccess.make_dir_recursive_absolute(logs)
-	var args := PackedStringArray([
-		"-p", "127.0.0.1:%d" % _port(), "-C", cluster_file, "-d", data, "-L", logs,
-		"-i", FileAccess.get_file_as_string(id_path).strip_edges(),
-		"--memory", "1GiB", "--storage-memory", "512MiB", "--cache-memory", "256MiB",
-		"--maxlogssize", "100MiB"])
+	var args := PackedStringArray(
+		[
+			"-p",
+			"127.0.0.1:%d" % _port(),
+			"-C",
+			cluster_file,
+			"-d",
+			data,
+			"-L",
+			logs,
+			"-i",
+			FileAccess.get_file_as_string(id_path).strip_edges(),
+			"--memory",
+			"1GiB",
+			"--storage-memory",
+			"512MiB",
+			"--cache-memory",
+			"256MiB",
+			"--maxlogssize",
+			"100MiB"
+		]
+	)
 	_pid = OS.create_process(server, args)
 	if _pid <= 0:
 		_done.call_deferred("failed", "could not start " + server)
@@ -152,7 +174,12 @@ func _run(dir: String) -> void:
 	_spawned = true
 	# A new database needs configuring once. On an existing one this answers "already exists", which is fine.
 	var out := []
-	OS.execute(cli, ["-C", cluster_file, "--exec", "configure new single ssd", "--timeout", "30"], out, true)
+	OS.execute(
+		cli,
+		["-C", cluster_file, "--exec", "configure new single ssd", "--timeout", "30"],
+		out,
+		true
+	)
 	for i in 12:
 		if _stopping:
 			return
@@ -222,7 +249,10 @@ func _selftest(args: PackedStringArray) -> void:
 			problem = _roundtrip(plant)
 	var ok := state == "ready" and problem == ""
 	# plant= and mode= are printed so a harness that forgot a flag fails its own regex.
-	var verdict := "FDB-SELFTEST %s plant=%s mode=%s %s" % ["PASS" if ok else "FAIL", str(plant).to_lower(), mode, problem if not ok else detail]
+	var verdict := (
+		"FDB-SELFTEST %s plant=%s mode=%s %s"
+		% ["PASS" if ok else "FAIL", str(plant).to_lower(), mode, problem if not ok else detail]
+	)
 	print(verdict)
 	# The Windows runtime is a GUI program with no stdout to capture, so the verdict is also a file.
 	var vf := FileAccess.open(_state_dir().path_join("selftest-result.txt"), FileAccess.WRITE)
