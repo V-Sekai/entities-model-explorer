@@ -15,9 +15,8 @@
 #   GODOT    optional: the double editor that exports the pck (default
 #            $ENGINE/godot.macos.editor.double.arm64; godot.linuxbsd.editor.double.x86_64 on Linux)
 #   ENGINE   dir with godot.macos.editor.double.arm64 and the three template_release runtimes
-#            from V-Sekai-fire/service-godot-build v20260930-double.1, plus LICENSE-model-explorer.txt
-#   SANDBOX  dir with the godot-sandbox native libraries (CI artifacts of the add-on's main),
-#            named libgodot_riscv.<os>.template_release.double.<arch>[.so|.dll|.framework]
+#            from a V-Sekai-fire/entities-zone release, which has the Sandbox class built in, plus the
+#            FoundationDB client beside them (libfdb_c.dylib, fdb_c.dll, libfdb_c.so) and LICENSE-model-explorer.txt
 #   ELF      skintokens.elf
 #   USD_ELF  usd.elf (interactor-usd-guest), the OpenUSD reader for .usd, .usda, .usdc and .usdz
 #   MOTION_ELF  motion.elf (interactor-motion-guest)
@@ -59,7 +58,6 @@ if [ "$cmd" = pck ]; then
   rm -rf "$src" && mkdir -p "$src"
   git -C "$here" archive HEAD | tar -x -C "$src"
   rm -rf "$src/guest"
-  mkdir -p "$src/addons/godot_sandbox/bin"
   # Bake the build label into the app so the screen shows which build this is.
   cat > "$src/addons/vsk_version/build_constants.gd" <<EOF
 # Set by the build system, do not modify!
@@ -68,18 +66,6 @@ const BUILD_LABEL = "build @ $(git -C $here rev-parse --short HEAD)"
 const BUILD_DATE_STR = "$(date -u +%Y-%m-%d)"
 const BUILD_UNIX_TIME = $(date -u +%s)
 EOF
-  cp -R "$SANDBOX"/libgodot_riscv.* "$src/addons/godot_sandbox/bin/"
-  cat > "$src/addons/godot_sandbox/bin/godot-riscv.gdextension" <<'E'
-[configuration]
-
-entry_symbol = "riscv_library_init"
-compatibility_minimum = "4.4"
-
-[libraries]
-macos.double = "./libgodot_riscv.macos.template_release.double.universal.framework"
-windows.double.x86_64 = "./libgodot_riscv.windows.template_release.double.x86_64.dll"
-linux.double.x86_64 = "./libgodot_riscv.linux.template_release.double.x86_64.so"
-E
   cp "$ELF" "$src/skintokens.elf"
   cp "$USD_ELF" "$src/usd.elf"
   cp "$MOTION_ELF" "$src/motion.elf"
@@ -128,7 +114,7 @@ E
     || { cat "$out/liltoon_pack.log"; exit 1; }
   "$G" $HL --path "$src" --export-pack Linux "$out/skintokens-viewer.pck" > "$out/export.log" 2>&1
   if grep -q "SCRIPT ERROR" "$out/export.log"; then echo "SCRIPT ERROR in export.log"; exit 1; fi
-  for f in skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar AssetPackageExport.sgd mujoco.elf colliders.json godot-riscv.gdextension AutoRig.gd FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd clips.tsv walk.f32 mm/skeleton.txt; do
+  for f in skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd clips.tsv walk.f32 mm/skeleton.txt; do
     grep -aq "$f" "$out/skintokens-viewer.pck" || { echo "pck lacks $f"; exit 1; }
   done
   echo "PCK-OK $(wc -c < "$out/skintokens-viewer.pck") bytes"
@@ -156,7 +142,7 @@ lay() { # <os> <runtime> <exe suffix> <library>
   cp "$ENGINE/$2" "$d/$app$3" && chmod +x "$d/$app$3"
   # Godot loads the pck that has the name of the program.
   cp "$out/skintokens-viewer.pck" "$d/$app.pck"
-  cp -R "$SANDBOX/$4" "$d/"
+  cp "$ENGINE/$4" "$d/"  # the FoundationDB client the runtime links, beside it
   cp "$ENGINE/LICENSE-model-explorer.txt" "$d/"
   cp "$NOTICES/LICENSE.md" "$NOTICES/NOTICE" "$NOTICES/CITATION.cff" "$d/"
   for f in $weights; do
@@ -168,11 +154,11 @@ lay() { # <os> <runtime> <exe suffix> <library>
   fi
 }
 lay macos godot.macos.template_release.double.arm64 "" \
-  libgodot_riscv.macos.template_release.double.universal.framework
+  libfdb_c.dylib
 lay windows godot.windows.template_release.double.x86_64.llvm.exe .exe \
-  libgodot_riscv.windows.template_release.double.x86_64.dll
+  fdb_c.dll
 lay linux godot.linuxbsd.template_release.double.x86_64 "" \
-  libgodot_riscv.linux.template_release.double.x86_64.so
+  libfdb_c.so
 # Archives hold the files at the top level: Explorer and Archive Utility already extract into a folder
 # named after the archive, so a top folder inside it would give <app>-*/<app>/.
 o="$out/$variant"
