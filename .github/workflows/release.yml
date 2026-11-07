@@ -287,7 +287,8 @@ jobs:
       - name: The packaged server starts, answers SQLite, and stops with the app
         shell: bash
         run: |
-          set -u
+          # GitHub runs this with -e. The control cases are meant to exit 1, so -e must be off.
+          set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
           case "$RUNNER_OS" in
             Linux) tar -xf "$GITHUB_WORKSPACE"/dist/*-linux-x86_64.tar; exe=./$APP ;;
@@ -301,7 +302,7 @@ jobs:
             if [ -n "$bin" ]; then export WEFT_FDB_BIN_DIR="$bin"; else unset WEFT_FDB_BIN_DIR; fi
             export WEFT_FDB_STATE_DIR="$RUNNER_TEMP/fdb state"
             rm -f "$WEFT_FDB_STATE_DIR/selftest-result.txt"
-            out=$(timeout 240 "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
+            out=$(perl -e 'alarm 240; exec @ARGV' "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
             # The verdict file, not stdout: the Windows runtime has no console.
             line=$(head -1 "$WEFT_FDB_STATE_DIR/selftest-result.txt" 2>/dev/null)
             echo "== $label: rc=$rc  $line"
