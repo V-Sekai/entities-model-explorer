@@ -20,6 +20,7 @@ config/windows_native_icon="res://vsk_model_explorer/resource/icon/app_icon.ico"
 
 [autoload]
 
+FdbServer="*res://vsk_model_explorer/core/FdbServer.gd"
 GlobalSignal="*res://vsk_model_explorer/core/GlobalSignal.gd"
 MeshExt="*res://vsk_model_explorer/core/MeshExt.gd"
 MCP="*res://addons/vsekai_godot_mcp/mcp_runtime.gd"
