@@ -184,6 +184,12 @@ jobs:
             "    value: \"stage:$STAGE\"" \
             > "$RUNNER_TEMP/notices/CITATION.cff"
 
+      - name: Set up Elixir (package_desktop.exs)
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17"
+          otp-version: "27"
+
       - name: Export the pck
         run: |
           set -eu
@@ -193,18 +199,18 @@ jobs:
                  HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
-          # package_desktop.sh archives HEAD, so the fetched build products stay out of it.
+          # package_desktop.exs archives HEAD, so the fetched build products stay out of it.
           export STATION_DIR="$RUNNER_TEMP/station"
-          tools/package_desktop.sh pck "$RUNNER_TEMP/out"
+          elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
 
       - name: Package macOS, Windows and Linux
         run: |
           set -eu
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
           mkdir -p "$RUNNER_TEMP/no-weights"
-          tools/package_desktop.sh package "$RUNNER_TEMP/out" "$RUNNER_TEMP/no-weights" walk-mode
+          elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$RUNNER_TEMP/no-weights" walk-mode
           mkdir -p dist
-          cp "$RUNNER_TEMP/out/walk-mode/$APP"-*.zip "$RUNNER_TEMP/out/walk-mode/$APP"-*.tar dist/
+          cp "$RUNNER_TEMP/out/walk-mode/$APP"-*.zip "$RUNNER_TEMP/out/walk-mode/$APP"-*.tar.gz dist/
           # Name the archives after the tag: walk-mode-viewer-<tag>-<os>-<arch>.<ext>
           tag="$TAG"
           cd dist
@@ -214,9 +220,31 @@ jobs:
           # A package that cannot be read back is a failed build.
           for z in *.zip; do unzip -tq "$z"; done
           for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
+          # macOS has no embed_pck option in Godot's bundle exporter (package_desktop.exs), so it
+          # still ships a sibling "$APP.pck"; Windows and Linux are real --export-release embeds now
+          # (binary_format/embed_pck=true), so the exe is self-contained and there is no sibling pck.
           unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.pck"
           unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
-          tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "$APP.pck"
+          ! unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.pck"
+          tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "^$APP$"
+          ! tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "$APP.pck"
+
+      - name: Ship the matching editor and export templates
+        run: |
+          set -eu
+          cd dist
+          for pair in \
+            "godot.linuxbsd.editor.double.x86_64:godot-editor-$TAG-linux-x86_64" \
+            "godot.macos.editor.double.arm64:godot-editor-$TAG-macos-arm64" \
+            "godot.windows.editor.double.x86_64.llvm.exe:godot-editor-$TAG-windows-x86_64.exe" \
+            "godot.linuxbsd.template_release.double.x86_64:godot-template-release-$TAG-linux-x86_64" \
+            "godot.macos.template_release.double.arm64:godot-template-release-$TAG-macos-arm64" \
+            "godot.windows.template_release.double.x86_64.llvm.exe:godot-template-release-$TAG-windows-x86_64.exe"; do
+            src="${pair%%:*}"; dst="${pair##*:}"
+            cp "$RUNNER_TEMP/engine/$src" "$dst"
+            chmod +x "$dst"
+          done
+          ls -la godot-editor-* godot-template-release-*
 
       # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then notarize.
       # rcodesign does both from Linux; a zip of a signed executable and library is an accepted notary asset.
