@@ -100,14 +100,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/engine"
           cd "$RUNNER_TEMP/engine"
           for f in godot.linuxbsd.editor.double.x86_64 \
+                   godot.macos.editor.double.arm64 \
+                   godot.windows.editor.double.x86_64.llvm.exe \
                    godot.linuxbsd.template_release.double.x86_64 \
                    godot.macos.template_release.double.arm64 \
                    godot.windows.template_release.double.x86_64.llvm.exe \
                    libfdb_c.so libfdb_c.dylib fdb_c.dll SHA256SUMS; do
             gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
           done
-          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
-          [ "$(wc -l < wanted.sums)" = 7 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
           sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
