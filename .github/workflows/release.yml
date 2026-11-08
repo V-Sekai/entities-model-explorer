@@ -458,11 +458,11 @@ jobs:
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
           case "$RUNNER_OS" in
-            Linux) tar -xzf "$GITHUB_WORKSPACE"/dist/*-linux-x86_64.tar.gz; exe=./$APP ;;
-            macOS) unzip -q "$GITHUB_WORKSPACE"/dist/*-macos-arm64.zip
+            Linux) tar -xzf "$GITHUB_WORKSPACE/dist/$APP"-*-linux-x86_64.tar.gz; exe=./$APP ;;
+            macOS) unzip -q "$GITHUB_WORKSPACE/dist/$APP"-*-macos-arm64.zip
                    exe="./$APP.app/Contents/MacOS/$APP"
                    chmod +x "$exe" "./$APP.app/Contents/MacOS/fdbserver" "./$APP.app/Contents/MacOS/fdbcli" ;;
-            Windows) 7z x -y "$GITHUB_WORKSPACE"/dist/*-windows-x86_64.zip > /dev/null; exe=./$APP.exe ;;
+            Windows) 7z x -y "$GITHUB_WORKSPACE/dist/$APP"-*-windows-x86_64.zip > /dev/null; exe=./$APP.exe ;;
           esac
           ls -la
           fails=0
