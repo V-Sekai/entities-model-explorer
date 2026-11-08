@@ -160,17 +160,18 @@ defmodule PackageDesktop do
 
   # Points export_presets.cfg's custom_template/release at this run's downloaded template_release
   # runtime for Windows, Linux and macOS (Mac). export_presets.cfg in git keeps all three blank:
-  # $ENGINE is a per-run temp dir, so the path is injected here, not hardcoded. macOS still has no
-  # binary_format/embed_pck option in Godot's bundle exporter (that preset ships a real .app
-  # bundle via --export-release instead, with the pck as a Resources-dir sibling the engine writes
-  # itself), but it DOES need custom_template/release pointed at the downloaded runtime like the
-  # other two, or `package`'s --export-release "Mac" falls back to the editor's own template and
-  # fails on a runner that never fetched one.
+  # $ENGINE is a per-run temp dir, so the path is injected here, not hardcoded. Windows and Linux
+  # point straight at the flat template_release binary (their --export-release accepts a raw
+  # executable there); macOS does not -- Godot's macOS exporter unzips custom_template/release
+  # and copies out Contents/MacOS/godot_macos_release.<architecture> and Contents/Info.plist
+  # itself, so it needs the "macos-template.zip" ENGINE builds (see release.yml's "Build the
+  # macOS export template" step; a bare Mach-O binary there fails with "Could not find template
+  # app to export").
   defp patch_embed_templates(path) do
     engine = req_env!("ENGINE")
     win_tpl = Path.join(engine, "godot.windows.template_release.double.x86_64.llvm.exe")
     linux_tpl = Path.join(engine, "godot.linuxbsd.template_release.double.x86_64")
-    mac_tpl = Path.join(engine, "godot.macos.template_release.double.arm64")
+    mac_tpl = Path.join(engine, "macos-template.zip")
 
     lines = File.read!(path) |> String.split("\n")
 

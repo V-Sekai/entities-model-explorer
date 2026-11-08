@@ -114,6 +114,80 @@ jobs:
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
 
+      # Godot's macOS exporter does not accept a bare Mach-O binary as custom_template/release --
+      # it unzips that path looking for macos_template.app/Contents/MacOS/godot_macos_release.
+      # <architecture> and macos_template.app/Contents/Info.plist (platform/macos/export/
+      # export_plugin.cpp), the same structure the official macos.zip export template ships.
+      # binary_format/architecture is "arm64" in export_presets.cfg's "Mac" preset (this engine has
+      # no Intel build), so the binary inside must be named godot_macos_release.arm64 exactly.
+      - name: Build the macOS export template
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          mkdir -p macos_template.app/Contents/MacOS
+          cp godot.macos.template_release.double.arm64 macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          chmod +x macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          printf 'APPL????' > macos_template.app/Contents/PkgInfo
+          cat > macos_template.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>English</string>
+            <key>CFBundleExecutable</key>
+            <string>$binary</string>
+            <key>CFBundleName</key>
+            <string>$name</string>
+            <key>CFBundleDisplayName</key>
+            <string>$name</string>
+            <key>CFBundleIconFile</key>
+            <string>icon.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>$bundle_identifier</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$short_version</string>
+            <key>CFBundleSignature</key>
+            <string>$signature</string>
+            <key>CFBundleVersion</key>
+            <string>$version</string>
+            <key>DTPlatformBuild</key>
+            <string>$platfbuild</string>
+            <key>DTPlatformName</key>
+            <string>macosx</string>
+            <key>DTPlatformVersion</key>
+            <string>$sdkver</string>
+            <key>DTSDKBuild</key>
+            <string>$sdkbuild</string>
+            <key>DTSDKName</key>
+            <string>$sdkname</string>
+            <key>DTXcode</key>
+            <string>$xcodever</string>
+            <key>DTXcodeBuild</key>
+            <string>$xcodebuild</string>
+            <key>NSHumanReadableCopyright</key>
+            <string>$copyright</string>
+            <key>CFBundleSupportedPlatforms</key>
+            <array>
+              <string>MacOSX</string>
+            </array>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+            <key>LSApplicationCategoryType</key>
+            <string>public.app-category.$app_category</string>
+            <key>NSHighResolutionCapable</key>
+            $highres
+          </dict>
+          </plist>
+          PLIST
+          (cd macos_template.app && zip -qry ../macos-template.zip .)
+          rm -rf macos_template.app
+          unzip -l macos-template.zip
+
       - name: Fetch the FoundationDB server and command line
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}

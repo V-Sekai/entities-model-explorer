@@ -85,9 +85,11 @@ defmodule LocalBuildTest do
          # package_desktop.exs's "package" step lays out macOS, Windows AND Linux unconditionally,
          # even when only the Linux leg is run here, so all three templates are needed. Windows
          # and Linux are the real --export-release embed_pck templates (patch_embed_templates/1
-         # in package_desktop.exs points custom_template/release at them); macOS keeps the
-         # sibling-pck fallback.
+         # in package_desktop.exs points custom_template/release at them); macOS needs the same
+         # zipped macos_template.app structure release.yml's "Build the macOS export template"
+         # step builds (a bare Mach-O binary makes Godot's macOS exporter fail outright).
          :ok <- gh_release_download(engine_tag, "V-Sekai-fire/entities-zone", @engine_files, engine),
+         :ok <- build_macos_template(engine),
          :ok <- Enum.reduce_while(Enum.filter(@engine_files, &String.starts_with?(&1, ["godot.", "fdbserver."])), :ok, fn f, _ ->
            case chmod_x(Path.join(engine, f)) do
              :ok -> {:cont, :ok}
@@ -115,6 +117,40 @@ defmodule LocalBuildTest do
          :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, skintokens viewer (local build test)\n"),
          :ok <- File.write(Path.join(notices, "CITATION.cff"), ~s(cff-version: 1.2.0\nmessage: "local build test"\ntitle: "V-Sekai Model Explorer"\n)) do
       :ok
+    end
+  end
+
+  # Mirrors release.yml's "Build the macOS export template" step: Godot's macOS exporter wants a
+  # zipped macos_template.app/Contents/{MacOS/godot_macos_release.arm64,Info.plist}, not the bare
+  # Mach-O binary ENGINE otherwise has.
+  defp build_macos_template(engine) do
+    app = Path.join(engine, "macos_template.app")
+    mac = Path.join(app, "Contents/MacOS")
+    File.mkdir_p!(mac)
+
+    with {:ok, _} <- File.cp(Path.join(engine, "godot.macos.template_release.double.arm64"), Path.join(mac, "godot_macos_release.arm64")),
+         :ok <- chmod_x(Path.join(mac, "godot_macos_release.arm64")),
+         :ok <- File.write(Path.join(app, "Contents/PkgInfo"), "APPL????"),
+         :ok <- File.write(Path.join(app, "Contents/Info.plist"), ~s(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>$binary</string>
+  <key>CFBundleName</key><string>$name</string>
+  <key>CFBundleDisplayName</key><string>$name</string>
+  <key>CFBundleIdentifier</key><string>$bundle_identifier</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$short_version</string>
+  <key>CFBundleSignature</key><string>$signature</string>
+  <key>CFBundleVersion</key><string>$version</string>
+  <key>NSHumanReadableCopyright</key><string>$copyright</string>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.$app_category</string>
+  <key>NSHighResolutionCapable</key>$highres
+</dict></plist>
+)),
+         {:ok, _} <- run("zip", ["-qry", Path.join(engine, "macos-template.zip"), "."], cd: app) do
+      File.rm_rf(app)
     end
   end
 
