@@ -2,13 +2,16 @@
 # Build the desktop viewer packages with the auto-rig and its weights.
 #
 #   elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
-#                                                     lay out and archive the two packages
+#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
+#                                                     lay out and archive the three packages
 #                                                     in <out dir>/<viewer>/ with SHA256SUMS
 #
-# One pck, two viewers. Each feature is on when its weights are in the package's w folder:
+# One pck, three viewers. Each feature is on when its weights are in the package's w folder:
 #   skintokens     skintokens-viewer, the rig weights (R auto-rigs), no Kimodo (the default)
 #   kimodo-motion  kimodo-motion-viewer, the Kimodo weights (the Motion list), no rig weights
+#   walk-mode      walk-mode-viewer, no weights (M walks a rigged model; R is unused) --
+#                  the lighter download for someone who only wants to walk a model rigged
+#                  elsewhere, shipped alongside skintokens-viewer in every release
 #
 # Inputs (environment):
 #   GODOT    optional: the double editor that exports the pck and (for `package`) runs
@@ -81,8 +84,8 @@ defmodule PackageDesktop do
   defp usage do
     """
     elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
-                                                      lay out and archive the two packages
+    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
+                                                      lay out and archive the three packages
                                                       in <out dir>/<viewer>/ with SHA256SUMS
     """
   end
@@ -322,7 +325,8 @@ defmodule PackageDesktop do
 
   @variants %{
     "skintokens" => {"skintokens-viewer", ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)},
-    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)}
+    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)},
+    "walk-mode" => {"walk-mode-viewer", []}
   }
 
   defp package(out, w, variant) do
