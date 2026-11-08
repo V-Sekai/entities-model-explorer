@@ -17,6 +17,13 @@
 #   ENGINE   dir with godot.macos.editor.double.arm64 and the three template_release runtimes
 #            from a V-Sekai-fire/entities-zone release, which has the Sandbox class built in, plus the
 #            FoundationDB client beside them (libfdb_c.dylib, fdb_c.dll, libfdb_c.so) and LICENSE-model-explorer.txt
+#            windows.template_release and linuxbsd.template_release are also the real embed_pck
+#            templates: `pck` points export_presets.cfg's custom_template/release at them (they carry
+#            the linker-emitted "pck" section from entities-godot's platform/<os>/godot_<os>.cpp), and
+#            `package` runs Godot's own --export-release against each, so the shipped exe has the pck
+#            appended and the section header patched by the engine's own fixup_embedded_pck() --
+#            not a `cat` and not a same-named sibling .pck (macOS has no embed_pck option in Godot's
+#            bundle exporter, so it still gets a bare binary + Resources-style sibling pck below).
 #   ELF      skintokens.elf
 #   USD_ELF  usd.elf (interactor-usd-guest), the OpenUSD reader for .usd, .usda, .usdc and .usdz
 #   MOTION_ELF  motion.elf (interactor-motion-guest)
@@ -58,6 +65,23 @@ if [ "$cmd" = pck ]; then
   rm -rf "$src" && mkdir -p "$src"
   git -C "$here" archive HEAD | tar -x -C "$src"
   rm -rf "$src/guest"
+  # Point the real embed_pck templates at this run's downloaded engine files: `package`'s
+  # --export-release reads these two fields, not a hardcoded path (export_presets.cfg in git keeps
+  # them blank since $ENGINE is a per-run temp dir). macOS has no custom_template/release option
+  # for embed_pck's exporter here, so it is left untouched.
+  python3 - "$src/export_presets.cfg" "$ENGINE/godot.windows.template_release.double.x86_64.llvm.exe" "$ENGINE/godot.linuxbsd.template_release.double.x86_64" <<'PY'
+import sys
+path, win_tpl, linux_tpl = sys.argv[1:4]
+lines = open(path).read().splitlines(keepends=True)
+cur = None
+for i, line in enumerate(lines):
+    if line.startswith('name="'):
+        cur = line.split('"')[1]
+    if line.startswith('custom_template/release=') and cur in ("Windows", "Linux"):
+        tpl = win_tpl if cur == "Windows" else linux_tpl
+        lines[i] = 'custom_template/release="%s"\n' % tpl
+open(path, "w").writelines(lines)
+PY
   # Bake the build label into the app so the screen shows which build this is.
   cat > "$src/addons/vsk_version/build_constants.gd" <<EOF
 # Set by the build system, do not modify!
@@ -147,13 +171,28 @@ done
 for f in LICENSE.md NOTICE CITATION.cff; do
   [ -f "${NOTICES:-}/$f" ] || { echo "missing \$NOTICES/$f (from the viewer's HF download repo)"; exit 1; }
 done
-lay() { # <os> <runtime> <exe suffix> <FoundationDB client> <server platform>
+lay() { # <os> <runtime> <exe suffix> <FoundationDB client> <server platform> <export preset, or "" for the sibling-pck path>
   d="$out/$variant/$1/$app"
   rm -rf "$out/$variant/$1" && mkdir -p "$d"
   [ -z "$weights" ] || mkdir -p "$d/w"
-  cp "$ENGINE/$2" "$d/$app$3" && chmod +x "$d/$app$3"
-  # Godot loads the pck that has the name of the program.
-  cp "$out/skintokens-viewer.pck" "$d/$app.pck"
+  if [ -n "${6:-}" ]; then
+    # Real embedding: run Godot's own --export-release against the imported project left by `pck`
+    # ($out/src), with that preset's custom_template/release pointed at $ENGINE's template (set
+    # above) and binary_format/embed_pck=true in export_presets.cfg. The engine copies the
+    # template to $d/$app$3 and appends+patches the pck itself (fixup_embedded_pck): one
+    # self-contained binary, nothing to go missing beside it.
+    G="${GODOT:-$ENGINE/godot.macos.editor.double.arm64}"
+    case $(uname) in Darwin) HL="--resolution 320x180" ;; *) HL=--headless ;; esac
+    "$G" $HL --path "$out/src" --export-release "$6" "$d/$app$3" > "$out/export-$1-$variant.log" 2>&1 \
+      || { cat "$out/export-$1-$variant.log"; echo "export-release $6 ($variant) failed"; exit 1; }
+    chmod +x "$d/$app$3"
+  else
+    cp "$ENGINE/$2" "$d/$app$3" && chmod +x "$d/$app$3"
+    # macOS has no embed_pck option in Godot's bundle exporter here, so the sibling pck named
+    # after the program (Godot's own fallback lookup) is the real mechanism on this OS, not a
+    # stand-in for one.
+    cp "$out/skintokens-viewer.pck" "$d/$app.pck"
+  fi
   cp "$ENGINE/$4" "$d/"  # the FoundationDB client the runtime links, beside it
   # The server and its command line sit beside the runtime; FdbServer.gd starts them. One name on every OS.
   cp "$ENGINE/fdbserver.$5" "$d/fdbserver$3" && chmod +x "$d/fdbserver$3"
@@ -171,9 +210,9 @@ lay() { # <os> <runtime> <exe suffix> <FoundationDB client> <server platform>
 lay macos godot.macos.template_release.double.arm64 "" \
   libfdb_c.dylib macos.arm64
 lay windows godot.windows.template_release.double.x86_64.llvm.exe .exe \
-  fdb_c.dll windows.x86_64.exe
+  fdb_c.dll windows.x86_64.exe Windows
 lay linux godot.linuxbsd.template_release.double.x86_64 "" \
-  libfdb_c.so linux.x86_64
+  libfdb_c.so linux.x86_64 Linux
 # Archives hold the files at the top level: Explorer and Archive Utility already extract into a folder
 # named after the archive, so a top folder inside it would give <app>-*/<app>/.
 o="$out/$variant"
