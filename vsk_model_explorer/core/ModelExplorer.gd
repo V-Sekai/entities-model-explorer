@@ -26,6 +26,8 @@ var motion: Node
 const Flex = preload("res://vsk_model_explorer/core/Flex.gd")
 var flex: Node
 const MotionMatch = preload("res://vsk_model_explorer/core/MotionMatch.gd")
+const Campus = preload("res://vsk_model_explorer/core/Campus.gd")
+var campus: Node
 var move: Node
 # The clip the motion step just added: the animation list plays it once the file reopens.
 var play_after_load := ""
@@ -59,6 +61,13 @@ func _ready():
 	add_control_row(["keys", ["C"], "C", "Colour chart"])
 	gltf_is_loaded.connect(_place_color_chart.unbind(2))
 	fbx_is_loaded.connect(_place_color_chart.unbind(2))
+	# P builds the campus (Sakuragaoka Station) when the build carries it.
+	if Campus.available():
+		campus = Campus.new()
+		add_child(campus)
+		add_control_row(["keys", ["P"], "P", "Campus"])
+		if "--campus" in OS.get_cmdline_user_args():
+			campus.toggle.call_deferred()
 	if OS.has_feature("web"):
 		# The page rigs the model; here R saves a rigged .glb or a .vrm as a VRM 1.0 file.
 		auto_rig = AutoRig.new()

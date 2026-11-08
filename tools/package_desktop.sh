@@ -92,6 +92,13 @@ EOF
   python3 -c 'import sys; b = open(sys.argv[1], "rb").read(); sys.exit(0 if b"SBXV(\0\0\0" in b and b"persona_ask_json\0" in b else 1)' \
     "$PERSONA_ELF" || { echo "$PERSONA_ELF is not a double-precision persona.elf carrying the persona's Lean"; exit 1; }
   cp "$PERSONA_ELF" "$src/persona.elf"
+  # The campus: the station addon and its slug guests from a checkout of V-Sekai-fire/entities-sakuragaoka-station
+  # (STATION_DIR, pinned by the release). Unset, the pck has no campus and the viewer shows no P row.
+  if [ -n "${STATION_DIR:-}" ]; then
+    mkdir -p "$src/addons"
+    cp -R "$STATION_DIR/addons/sakuragaoka_station" "$src/addons/sakuragaoka_station"
+    cp "$STATION_DIR/slug.elf" "$STATION_DIR/slug.double.elf" "$src/"
+  fi
   mkdir -p "$src/motion/mm"
   first=""
   for set in $(echo "$MM_DATA" | tr ':' ' '); do
@@ -117,6 +124,11 @@ EOF
   for f in skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FdbServer.gd FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd clips.tsv walk.f32 mm/skeleton.txt; do
     grep -aq "$f" "$out/skintokens-viewer.pck" || { echo "pck lacks $f"; exit 1; }
   done
+  if [ -n "${STATION_DIR:-}" ]; then
+    for f in station.gd slug.double.elf texture_means.json; do
+      grep -aq "$f" "$out/skintokens-viewer.pck" || { echo "pck lacks the campus file $f"; exit 1; }
+    done
+  fi
   echo "PCK-OK $(wc -c < "$out/skintokens-viewer.pck") bytes"
   exit 0
 fi

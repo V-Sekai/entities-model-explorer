@@ -148,6 +148,17 @@ jobs:
           git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
 
+      # The campus: Sakuragaoka Station at a pinned commit (public repo; plain git). Bump the pin in its own commit.
+      - name: Fetch the campus (Sakuragaoka Station)
+        env:
+          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
+        run: |
+          set -eu
+          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
+          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
+          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
+          test -f "$RUNNER_TEMP/station/slug.double.elf"
+          echo "Campus: entities-sakuragaoka-station $STATION_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Notices
         run: |
           set -eu
@@ -183,6 +194,7 @@ jobs:
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
           # package_desktop.sh archives HEAD, so the fetched build products stay out of it.
+          export STATION_DIR="$RUNNER_TEMP/station"
           tools/package_desktop.sh pck "$RUNNER_TEMP/out"
 
       - name: Package macOS, Windows and Linux
