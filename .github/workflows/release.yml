@@ -399,8 +399,16 @@ jobs:
           sign --entitlements-xml-path "$S/entitlements.plist" "$app"
           "$RC" verify "$mac/$APP"
           rm -f "$zip"
+          # Submit the signed .app DIRECTORY to Apple, not our own zip of it: rcodesign's
+          # notarize_path() builds its own Apple-compatible zip internally (DirectoryBundle ->
+          # bundle_to_zip, preserving exec bits/symlinks correctly) when given a bundle path.
+          # Re-zipping a signed bundle with the plain `zip` tool is a well-known way to get
+          # "The signature of the binary is invalid" from Apple's notary service (it can disturb
+          # the resource fork/attribute data codesign relies on) -- CI run 42492448328 hit exactly
+          # that. --staple attaches the ticket to the .app itself so the zip we build afterward
+          # for distribution carries a working offline Gatekeeper ticket.
+          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 --staple "$app"
           (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
-          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
           (cd dist && ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS && cat SHA256SUMS)
           echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
