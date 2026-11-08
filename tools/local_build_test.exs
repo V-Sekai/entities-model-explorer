@@ -50,7 +50,11 @@ defmodule LocalBuildTest do
       with :ok <- maybe_fetch(skip_fetch, here, cache, engine, notices, engine_tag, fdb_release),
            :ok <- export_pck(here, engine, notices, cache, work),
            :ok <- package(work),
-           d = Path.join([work, "out", "walk-mode", "linux", @app]),
+           tgz = Path.join([work, "out", "walk-mode", "#{@app}-linux-x86_64.tar.gz"]),
+           :ok <- (if File.regular?(tgz), do: :ok, else: {:error, "package left no #{tgz}"}),
+           d = Path.join(work, "extracted"),
+           :ok <- File.mkdir_p(d),
+           {:ok, _} <- run("tar", ["-xzf", tgz, "-C", d]),
            :ok <- ls(d),
            :ok <- assert_embedded(d),
            :ok <- fdb_selftest(d, work) do
