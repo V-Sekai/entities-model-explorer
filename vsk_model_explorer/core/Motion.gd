@@ -60,6 +60,13 @@ func weights_dir() -> String:
 	var base := OS.get_executable_path().get_base_dir()
 	if OS.has_feature("editor"):
 		base = ProjectSettings.globalize_path("res://")
+	elif OS.get_name() == "macOS":
+		# Inside a .app bundle the executable lives in Contents/MacOS, but the weights
+		# (non-Mach-O .gguf files) ship in Contents/Resources instead: Apple's codesign
+		# and notarization reject a non-Mach-O file sitting loose next to the executable
+		# ("non Mach-O file with a nested rule"), so the packager places them one level
+		# up, in Contents/Resources/w (see tools/package_desktop.exs, place_binary("Mac", ...)).
+		base = base.path_join("../Resources")
 	return base.path_join("w")
 
 
