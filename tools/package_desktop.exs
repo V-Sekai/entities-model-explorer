@@ -364,7 +364,7 @@ defmodule PackageDesktop do
            :ok <- File.cp(Path.join(notices, "LICENSE.md"), Path.join(d, "LICENSE.md")),
            :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(d, "NOTICE")),
            :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(d, "CITATION.cff")),
-           :ok <- link_weights(d, w, weights),
+           :ok <- link_weights(d, weights, w),
            :ok <- link_bintr(d, os) do
         :ok
       end
