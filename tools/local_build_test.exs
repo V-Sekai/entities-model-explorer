@@ -20,7 +20,8 @@ defmodule LocalBuildTest do
                    SHA256SUMS)
   @cli_files ~w(fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe)
   @station_sha "d9c0f0f916c1e7280fab4f09fc685c6ea679d814"
-  @app "walk-mode-viewer"
+  @app "skintokens-viewer"
+  @weights ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)
 
   def main(argv) do
     case run(argv) do
@@ -50,7 +51,7 @@ defmodule LocalBuildTest do
       with :ok <- maybe_fetch(skip_fetch, here, cache, engine, notices, engine_tag, fdb_release),
            :ok <- export_pck(here, engine, notices, cache, work),
            :ok <- package(work),
-           tgz = Path.join([work, "out", "walk-mode", "#{@app}-linux-x86_64.tar.gz"]),
+           tgz = Path.join([work, "out", "skintokens", "#{@app}-linux-x86_64.tar.gz"]),
            :ok <- (if File.regular?(tgz), do: :ok, else: {:error, "package left no #{tgz}"}),
            d = Path.join(work, "extracted"),
            :ok <- File.mkdir_p(d),
@@ -111,7 +112,7 @@ defmodule LocalBuildTest do
          {:ok, _} <- run("git", ["-C", Path.join(cache, "station"), "checkout", "-q", @station_sha]),
          :ok <- File.mkdir_p(notices),
          {:ok, _} <- File.copy(Path.join(here, "LICENSE"), Path.join(notices, "LICENSE.md")),
-         :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, walk mode viewer (local build test)\n"),
+         :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, skintokens viewer (local build test)\n"),
          :ok <- File.write(Path.join(notices, "CITATION.cff"), ~s(cff-version: 1.2.0\nmessage: "local build test"\ntitle: "V-Sekai Model Explorer"\n)) do
       :ok
     end
@@ -167,8 +168,12 @@ defmodule LocalBuildTest do
 
   defp package(work) do
     IO.puts("== packaging the linux build (real --export-release embed_pck)")
-    no_weights = Path.join(work, "no-weights")
-    File.mkdir_p!(no_weights)
+    # skintokens needs its three weight files present in <w> (package_desktop.exs's need_files),
+    # even though this harness only exercises the Linux leg; empty placeholders are enough to
+    # satisfy the check and exercise link_weights/3's copy path.
+    weights = Path.join(work, "weights")
+    File.mkdir_p!(weights)
+    Enum.each(@weights, &File.write!(Path.join(weights, &1), ""))
 
     # NOTE: this harness runs pck export and packaging in one BEAM process, so GODOT set by
     # export_pck/5's System.put_env is still visible here. release.yml runs them as separate
@@ -176,7 +181,7 @@ defmodule LocalBuildTest do
     # "Package macOS, Windows and Linux" step -- CI run 42483764079 caught this the hard way
     # (fell back to package_desktop.exs's macOS-editor default, enoent on a Linux runner). This
     # harness cannot reproduce that step-boundary class of bug; release.yml is the real gate for it.
-    case run("elixir", ["tools/package_desktop.exs", "package", Path.join(work, "out"), no_weights, "walk-mode"]) do
+    case run("elixir", ["tools/package_desktop.exs", "package", Path.join(work, "out"), weights, "skintokens"]) do
       {:ok, _} -> :ok
       e -> e
     end

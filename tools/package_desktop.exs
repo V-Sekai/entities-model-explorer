@@ -2,14 +2,13 @@
 # Build the desktop viewer packages with the auto-rig and its weights.
 #
 #   elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
-#                                                     lay out and archive the three packages
+#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
+#                                                     lay out and archive the two packages
 #                                                     in <out dir>/<viewer>/ with SHA256SUMS
 #
 # One pck, two viewers. Each feature is on when its weights are in the package's w folder:
 #   skintokens     skintokens-viewer, the rig weights (R auto-rigs), no Kimodo (the default)
 #   kimodo-motion  kimodo-motion-viewer, the Kimodo weights (the Motion list), no rig weights
-#   walk-mode      walk-mode-viewer, no weights (M walks a rigged model; <w> is unused)
 #
 # Inputs (environment):
 #   GODOT    optional: the double editor that exports the pck and (for `package`) runs
@@ -82,8 +81,8 @@ defmodule PackageDesktop do
   defp usage do
     """
     elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
-                                                      lay out and archive the three packages
+    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
+                                                      lay out and archive the two packages
                                                       in <out dir>/<viewer>/ with SHA256SUMS
     """
   end
@@ -160,13 +159,18 @@ defmodule PackageDesktop do
   end
 
   # Points export_presets.cfg's custom_template/release at this run's downloaded template_release
-  # runtime for Windows and Linux (the real embed_pck templates). export_presets.cfg in git keeps
-  # both blank: $ENGINE is a per-run temp dir, so the path is injected here, not hardcoded. macOS
-  # has no custom_template/release option for embed_pck's exporter, so it is left untouched.
+  # runtime for Windows, Linux and macOS (Mac). export_presets.cfg in git keeps all three blank:
+  # $ENGINE is a per-run temp dir, so the path is injected here, not hardcoded. macOS still has no
+  # binary_format/embed_pck option in Godot's bundle exporter (that preset ships a real .app
+  # bundle via --export-release instead, with the pck as a Resources-dir sibling the engine writes
+  # itself), but it DOES need custom_template/release pointed at the downloaded runtime like the
+  # other two, or `package`'s --export-release "Mac" falls back to the editor's own template and
+  # fails on a runner that never fetched one.
   defp patch_embed_templates(path) do
     engine = req_env!("ENGINE")
     win_tpl = Path.join(engine, "godot.windows.template_release.double.x86_64.llvm.exe")
     linux_tpl = Path.join(engine, "godot.linuxbsd.template_release.double.x86_64")
+    mac_tpl = Path.join(engine, "godot.macos.template_release.double.arm64")
 
     lines = File.read!(path) |> String.split("\n")
 
@@ -177,8 +181,12 @@ defmodule PackageDesktop do
             [_, name] = Regex.run(~r/name="([^"]*)"/, line)
             {line, name}
 
-          String.starts_with?(line, "custom_template/release=") and cur in ["Windows", "Linux"] ->
-            tpl = if cur == "Windows", do: win_tpl, else: linux_tpl
+          String.starts_with?(line, "custom_template/release=") and cur in ["Windows", "Linux", "Mac"] ->
+            tpl = case cur do
+              "Windows" -> win_tpl
+              "Linux" -> linux_tpl
+              "Mac" -> mac_tpl
+            end
             {~s(custom_template/release="#{tpl}"), cur}
 
           true ->
@@ -313,8 +321,7 @@ defmodule PackageDesktop do
 
   @variants %{
     "skintokens" => {"skintokens-viewer", ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)},
-    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)},
-    "walk-mode" => {"walk-mode-viewer", []}
+    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)}
   }
 
   defp package(out, w, variant) do
@@ -324,7 +331,7 @@ defmodule PackageDesktop do
          :ok <- need_files(notices, ~w(LICENSE.md NOTICE CITATION.cff), "missing $NOTICES"),
          pck_bin = Path.join(out, @pck_name),
          src = Path.join(out, "src"),
-         :ok <- lay(out, variant, app, weights, w, notices, "macos", "godot.macos.template_release.double.arm64", "", "libfdb_c.dylib", "macos.arm64", nil, pck_bin, src),
+         :ok <- lay(out, variant, app, weights, w, notices, "macos", "godot.macos.template_release.double.arm64", "", "libfdb_c.dylib", "macos.arm64", "Mac", pck_bin, src),
          :ok <- lay(out, variant, app, weights, w, notices, "windows", "godot.windows.template_release.double.x86_64.llvm.exe", ".exe", "fdb_c.dll", "windows.x86_64.exe", "Windows", pck_bin, src),
          :ok <- lay(out, variant, app, weights, w, notices, "linux", "godot.linuxbsd.template_release.double.x86_64", "", "libfdb_c.so", "linux.x86_64", "Linux", pck_bin, src),
          vdir = Path.join(out, variant),
@@ -342,42 +349,57 @@ defmodule PackageDesktop do
       else: {:error, "#{what} #{Enum.map_join(missing, ", ", &Path.join(dir, &1))}"}
   end
 
-  # <preset> is nil for macOS, which has no embed_pck option in Godot's bundle exporter here: it
-  # keeps the bare binary + same-named sibling .pck (Godot's own fallback lookup), the real
-  # mechanism on that OS, not a stand-in for one. Windows and Linux run Godot's own
-  # --export-release against the project `pck` left imported at <out>/src, with
-  # custom_template/release already pointed at this run's downloaded runtime and
-  # binary_format/embed_pck=true in export_presets.cfg -- so the engine appends and patches the
-  # pck itself (fixup_embedded_pck): one self-contained binary, nothing to go missing beside it.
+  # Windows, Linux and macOS (Mac) all run Godot's own --export-release against the project `pck`
+  # left imported at <out>/src, with custom_template/release already pointed at this run's
+  # downloaded runtime and binary_format/embed_pck=true (Windows/Linux) in export_presets.cfg --
+  # so the engine appends and patches the pck itself (fixup_embedded_pck): one self-contained
+  # binary, nothing to go missing beside it. macOS has no embed_pck option in Godot's bundle
+  # exporter, so --export-release there produces a real .app bundle (export path ends in ".app",
+  # which Godot's macOS exporter writes directly rather than zipping) with the pck as a sibling
+  # inside the bundle's own Resources-equivalent spot next to the executable -- a real bundle
+  # structure, not a flat binary + same-named sibling file.
   defp lay(out, variant, app, weights, w, notices, os, runtime, suffix, fdb_client, server_platform, preset, pck_bin, src) do
     engine = req_env!("ENGINE")
     d = Path.join([out, variant, os, app])
 
     with :ok <- clean(d),
-         :ok <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src) do
-      with :ok <- File.cp(Path.join(engine, fdb_client), Path.join(d, fdb_client)),
-           :ok <- File.cp(Path.join(engine, "fdbserver.#{server_platform}"), Path.join(d, "fdbserver#{suffix}")),
-           :ok <- chmod_x(Path.join(d, "fdbserver#{suffix}")),
-           :ok <- File.cp(Path.join(engine, "fdbcli.#{server_platform}"), Path.join(d, "fdbcli#{suffix}")),
-           :ok <- chmod_x(Path.join(d, "fdbcli#{suffix}")),
-           :ok <- File.cp(Path.join(engine, "LICENSE-model-explorer.txt"), Path.join(d, "LICENSE-model-explorer.txt")),
-           :ok <- File.cp(Path.join(notices, "LICENSE.md"), Path.join(d, "LICENSE.md")),
-           :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(d, "NOTICE")),
-           :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(d, "CITATION.cff")),
-           :ok <- link_weights(d, weights, w),
-           :ok <- link_bintr(d, os) do
+         {:ok, bin_dir} <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src) do
+      with :ok <- File.cp(Path.join(engine, fdb_client), Path.join(bin_dir, fdb_client)),
+           :ok <- File.cp(Path.join(engine, "fdbserver.#{server_platform}"), Path.join(bin_dir, "fdbserver#{suffix}")),
+           :ok <- chmod_x(Path.join(bin_dir, "fdbserver#{suffix}")),
+           :ok <- File.cp(Path.join(engine, "fdbcli.#{server_platform}"), Path.join(bin_dir, "fdbcli#{suffix}")),
+           :ok <- chmod_x(Path.join(bin_dir, "fdbcli#{suffix}")),
+           :ok <- File.cp(Path.join(engine, "LICENSE-model-explorer.txt"), Path.join(bin_dir, "LICENSE-model-explorer.txt")),
+           :ok <- File.cp(Path.join(notices, "LICENSE.md"), Path.join(bin_dir, "LICENSE.md")),
+           :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(bin_dir, "NOTICE")),
+           :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(bin_dir, "CITATION.cff")),
+           :ok <- link_weights(bin_dir, weights, w),
+           :ok <- link_bintr(bin_dir, os) do
         :ok
       end
     end
   end
 
-  defp place_binary(nil, d, app, suffix, engine, runtime, pck_bin, _src) do
-    exe = Path.join(d, "#{app}#{suffix}")
+  # macOS (preset "Mac"): exports a real .app bundle via --export-release, output path ending in
+  # ".app" so Godot's macOS exporter writes the bundle directly instead of zipping it. The
+  # GDScripts that locate fdbserver/fdbcli/libfdb_c/weights all resolve relative to
+  # OS.get_executable_path().get_base_dir() (FdbServer.gd, Motion.gd, AutoRig.gd), which inside a
+  # bundle is Contents/MacOS -- so that is where the sibling files below land, same as the flat
+  # layout Windows and Linux already use beside their single exe. Returns the dir those siblings
+  # go in.
+  defp place_binary("Mac", d, app, _suffix, _engine, _runtime, _pck_bin, src) do
+    with {:ok, godot} <- godot_bin(),
+         bundle = Path.join(d, "#{app}.app"),
+         {:ok, log} <- run(godot, hl_args() ++ ["--path", src, "--export-release", "Mac", bundle]) do
+      bin_dir = Path.join([bundle, "Contents", "MacOS"])
+      exe = Path.join(bin_dir, app)
 
-    with :ok <- File.cp(Path.join(engine, runtime), exe),
-         :ok <- chmod_x(exe) do
-      # macOS fallback: Godot loads the pck named after the program.
-      File.cp(pck_bin, Path.join(d, "#{app}.pck"))
+      cond do
+        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting Mac:\n#{log}"}
+        not File.dir?(bundle) -> {:error, "--export-release Mac produced no #{bundle}:\n#{log}"}
+        not File.regular?(exe) -> {:error, "--export-release Mac produced no #{exe}:\n#{log}"}
+        true -> with :ok <- chmod_x(exe), do: {:ok, bin_dir}
+      end
     end
   end
 
@@ -388,7 +410,7 @@ defmodule PackageDesktop do
       cond do
         String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{log}"}
         not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{log}"}
-        true -> chmod_x(exe)
+        true -> with :ok <- chmod_x(exe), do: {:ok, d}
       end
     end
   end
