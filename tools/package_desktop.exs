@@ -595,7 +595,7 @@ defmodule PackageDesktop do
     e in ErlangError -> {:error, "cannot run #{cmd}: #{Exception.message(e)}"}
   end
 
-  defp tail(s), do: s |> String.split("\n", trim: true) |> Enum.take(-6) |> Enum.join(" | ")
+  defp tail(s), do: s |> String.split("\n", trim: true) |> Enum.take(-40) |> Enum.join(" | ")
 end
 
 System.halt(PackageDesktop.main(System.argv()))
