@@ -329,6 +329,14 @@ defmodule PackageDesktop do
     "walk-mode" => {"walk-mode-viewer", []}
   }
 
+  # So walk-mode-viewer and skintokens-viewer are tellable apart in the Finder/Dock/taskbar at a
+  # glance (iFire: "make sure walk and skintoken have different icons"), not just by their window
+  # title -- walk-mode gets a distinct hue-shifted icon (app_icon_walkmode.*), every other variant
+  # keeps the default app_icon.* (the blue cube).
+  @icon_dir "vsk_model_explorer/resource/icon"
+  @icons %{"walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"}}
+  @default_icons {"app_icon.icns", "app_icon.ico"}
+
   defp package(out, w, variant) do
     with {app, weights} <- Map.get(@variants, variant, {:error, "unknown viewer #{variant}"}),
          :ok <- need_files(w, weights, "missing"),
@@ -336,6 +344,7 @@ defmodule PackageDesktop do
          :ok <- need_files(notices, ~w(LICENSE.md NOTICE CITATION.cff), "missing $NOTICES"),
          pck_bin = Path.join(out, @pck_name),
          src = Path.join(out, "src"),
+         :ok <- patch_icon(Path.join(src, "export_presets.cfg"), variant),
          :ok <- lay(out, variant, app, weights, w, notices, "macos", "godot.macos.template_release.double.arm64", "", "libfdb_c.dylib", "macos.arm64", "Mac", pck_bin, src),
          :ok <- lay(out, variant, app, weights, w, notices, "windows", "godot.windows.template_release.double.x86_64.llvm.exe", ".exe", "fdb_c.dll", "windows.x86_64.exe", "Windows", pck_bin, src),
          :ok <- lay(out, variant, app, weights, w, notices, "linux", "godot.linuxbsd.template_release.double.x86_64", "", "libfdb_c.so", "linux.x86_64", "Linux", pck_bin, src),
@@ -344,6 +353,39 @@ defmodule PackageDesktop do
       IO.puts("PACKAGE-OK")
       :ok
     end
+  end
+
+  # Rewrites export_presets.cfg's Mac and Windows presets' application/icon lines to this
+  # variant's icon file (same name-tracking approach as patch_embed_templates/1 above). Every OS
+  # this variant packages for (lay/13 is called once per OS, same throwaway `src` copy) then
+  # exports with the right icon baked in by Godot's own exporter -- no post-hoc icon swap on the
+  # built binary needed. iOS/Android/Web presets are untouched (not built by this script).
+  defp patch_icon(path, variant) do
+    {icns, ico} = Map.get(@icons, variant, @default_icons)
+    icns_path = "res://#{@icon_dir}/#{icns}"
+    ico_path = "res://#{@icon_dir}/#{ico}"
+
+    lines = File.read!(path) |> String.split("\n")
+
+    {patched, _cur} =
+      Enum.map_reduce(lines, nil, fn line, cur ->
+        cond do
+          String.starts_with?(line, ~s(name=")) ->
+            [_, name] = Regex.run(~r/name="([^"]*)"/, line)
+            {line, name}
+
+          String.starts_with?(line, "application/icon=") and cur == "Mac" ->
+            {~s(application/icon="#{icns_path}"), cur}
+
+          String.starts_with?(line, "application/icon=") and cur == "Windows" ->
+            {~s(application/icon="#{ico_path}"), cur}
+
+          true ->
+            {line, cur}
+        end
+      end)
+
+    File.write(path, Enum.join(patched, "\n"))
   end
 
   defp need_files(dir, names, what) do
