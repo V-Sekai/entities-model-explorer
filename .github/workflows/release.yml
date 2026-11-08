@@ -386,7 +386,7 @@ jobs:
           PLIST
           zip="dist/$APP-$TAG-macos-arm64.zip"
           unzip -q "$zip" -d "$S/pkg"
-          sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization "$@"; }
+          sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization --code-signature-flags runtime "$@"; }
           app="$S/pkg/$APP.app"
           mac="$app/Contents/MacOS"
           # Nested code first (the FoundationDB client, server and command line inside
