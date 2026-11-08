@@ -51,7 +51,6 @@ env:
   ENGINE_TAG: ${{ inputs.engine_tag || 'v0.0.0-20261106225526-d632cdf2be4c' }}
   # The FoundationDB release fdbcli comes from; its server and client match the engine's (7.3).
   FDB_RELEASE: 7.3.79-weftspun-dev.2
-  APP: skintokens-viewer
   STAGE: ${{ inputs.stage || 'dev' }}
   GH_TOKEN: ${{ github.token }}
   # secrets.* is not allowed in a step's `if`; this env carries the answer.
@@ -306,28 +305,38 @@ jobs:
           # on this runner -- enoent).
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
-          elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$RUNNER_TEMP/weights" skintokens
-          mkdir -p dist
-          cp "$RUNNER_TEMP/out/skintokens/$APP"-*.zip "$RUNNER_TEMP/out/skintokens/$APP"-*.tar.gz dist/
-          # Name the archives after the tag: skintokens-viewer-<tag>-<os>-<arch>.<ext>
+          mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
+          # Both viewers ship from the one pck built above: skintokens-viewer is the full Model
+          # Explorer (auto-rig weights fetched below) and walk-mode-viewer is the lighter,
+          # weight-free download (M walks a model already rigged elsewhere; R is unused there).
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+            variant="${pair%%:*}"; rest="${pair#*:}"
+            app="${rest%%:*}"; w="${rest#*:}"
+            elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
+            cp "$RUNNER_TEMP/out/$variant/$app"-*.zip "$RUNNER_TEMP/out/$variant/$app"-*.tar.gz dist/
+            # Name the archives after the tag: <app>-<tag>-<os>-<arch>.<ext>
+            (cd dist && for f in "$app"-*; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+          done
           cd dist
-          for f in "$APP"-*; do mv "$f" "$APP-$tag-${f#"$APP"-}"; done
           ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
           cat SHA256SUMS
           # A package that cannot be read back is a failed build.
           for z in *.zip; do unzip -tq "$z"; done
           for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
-          # macOS now ships a real .app bundle (package_desktop.exs's "Mac" --export-release
+          # macOS ships a real .app bundle (package_desktop.exs's "Mac" --export-release
           # preset), with the pck inside it; Windows and Linux are the real --export-release
           # embeds (binary_format/embed_pck=true), so their exe is self-contained with no sibling
           # pck.
-          unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "\.pck$"
-          unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.app/Contents/MacOS/$APP$"
-          unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
-          ! unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.pck"
-          tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "^$APP$"
-          ! tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "$APP.pck"
+          for app in skintokens-viewer walk-mode-viewer; do
+            unzip -l "$app-$tag-macos-arm64.zip" | grep -q "\.pck$"
+            unzip -l "$app-$tag-macos-arm64.zip" | grep -q "$app.app/Contents/MacOS/$app$"
+            unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
+            ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
+            tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
+            ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
+          done
 
       - name: Ship the matching editor and export templates
         run: |
@@ -348,7 +357,7 @@ jobs:
 
       # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then notarize.
       # rcodesign does both from Linux; a zip of a signed executable and library is an accepted notary asset.
-      - name: Sign and notarize the macOS package (rcodesign)
+      - name: Sign and notarize the macOS packages (rcodesign)
         if: env.HAVE_APPLE_SECRETS == 'true'
         env:
           APPLE_DEVID_P12: ${{ secrets.APPLE_DEVID_P12 }}
@@ -361,7 +370,7 @@ jobs:
         run: |
           set -eu
           umask 077
-          S="$RUNNER_TEMP/sign"; mkdir -p "$S/bin" "$S/pkg"
+          S="$RUNNER_TEMP/sign"; mkdir -p "$S/bin"
           # rcodesign, pinned by hash.
           a="apple-codesign-$CODE_SIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
           curl -fsSL -o "$S/$a" "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$CODE_SIGN_VERSION/$a"
@@ -384,38 +393,42 @@ jobs:
             <key>com.apple.security.cs.disable-library-validation</key><true/>
           </dict></plist>
           PLIST
-          zip="dist/$APP-$TAG-macos-arm64.zip"
-          unzip -q "$zip" -d "$S/pkg"
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization --code-signature-flags runtime "$@"; }
-          app="$S/pkg/$APP.app"
-          mac="$app/Contents/MacOS"
-          # Nested code first (the FoundationDB client, server and command line inside
-          # Contents/MacOS beside the executable), then the .app bundle itself with the
-          # entitlements -- rcodesign's bundle signing walks and re-signs every nested Mach-O it
-          # finds under Contents, so the bundle-level sign below also covers the main executable.
-          sign "$mac/libfdb_c.dylib"
-          sign "$mac/fdbserver"
-          sign "$mac/fdbcli"
-          sign --entitlements-xml-path "$S/entitlements.plist" "$app"
-          "$RC" verify "$mac/$APP"
-          rm -f "$zip"
-          # Submit the signed .app DIRECTORY to Apple, not our own zip of it: rcodesign's
-          # notarize_path() builds its own Apple-compatible zip internally (DirectoryBundle ->
-          # bundle_to_zip, preserving exec bits/symlinks correctly) when given a bundle path.
-          # Re-zipping a signed bundle with the plain `zip` tool is a well-known way to get
-          # "The signature of the binary is invalid" from Apple's notary service (it can disturb
-          # the resource fork/attribute data codesign relies on) -- CI run 42492448328 hit exactly
-          # that. --staple attaches the ticket to the .app itself so the zip we build afterward
-          # for distribution carries a working offline Gatekeeper ticket.
-          "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 --staple "$app"
-          (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
+          tag="$TAG"
+          for app in skintokens-viewer walk-mode-viewer; do
+            zip="dist/$app-$tag-macos-arm64.zip"
+            rm -rf "$S/pkg"; mkdir -p "$S/pkg"
+            unzip -q "$zip" -d "$S/pkg"
+            bundle="$S/pkg/$app.app"
+            mac="$bundle/Contents/MacOS"
+            # Nested code first (the FoundationDB client, server and command line inside
+            # Contents/MacOS beside the executable), then the .app bundle itself with the
+            # entitlements -- rcodesign's bundle signing walks and re-signs every nested Mach-O it
+            # finds under Contents, so the bundle-level sign below also covers the main executable.
+            sign "$mac/libfdb_c.dylib"
+            sign "$mac/fdbserver"
+            sign "$mac/fdbcli"
+            sign --entitlements-xml-path "$S/entitlements.plist" "$bundle"
+            "$RC" verify "$mac/$app"
+            rm -f "$zip"
+            # Submit the signed .app DIRECTORY to Apple, not our own zip of it: rcodesign's
+            # notarize_path() builds its own Apple-compatible zip internally (DirectoryBundle ->
+            # bundle_to_zip, preserving exec bits/symlinks correctly) when given a bundle path.
+            # Re-zipping a signed bundle with the plain `zip` tool is a well-known way to get
+            # "The signature of the binary is invalid" from Apple's notary service (it can disturb
+            # the resource fork/attribute data codesign relies on) -- CI run 42492448328 hit exactly
+            # that. --staple attaches the ticket to the .app itself so the zip we build afterward
+            # for distribution carries a working offline Gatekeeper ticket.
+            "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 --staple "$bundle"
+            (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
+          done
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
           (cd dist && ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS && cat SHA256SUMS)
-          echo "macOS package signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
+          echo "macOS packages signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP }}-packages
+          name: model-explorer-packages
           path: dist/*
           if-no-files-found: error
           compression-level: 0
@@ -426,14 +439,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        app: [skintokens-viewer, walk-mode-viewer]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      APP: skintokens-viewer
+      APP: ${{ matrix.app }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ env.APP }}-packages
+          name: model-explorer-packages
           path: dist
       # Unpack the package as a user would, then run its own app. Each case must print the expected
       # FDB-SELFTEST verdict: an exit code alone proves nothing, since an app that cannot start also exits 1.
@@ -483,7 +497,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ env.APP }}-packages
+          name: model-explorer-packages
           path: dist
       # `gh release create --target` makes the tag on the commit the workflow ran on. Everything but the
       # release stage is a pre-release. The stage pointer tag then moves to the same commit (RFD 2312 part 2).
@@ -495,7 +509,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$TAG" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $TAG ($STAGE)" --generate-notes \
-            --notes "The full Model Explorer (skintokens viewer): drop in a model and the auto-rig (R) rigs it, for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). The macOS package is signed with a Developer ID and notarized; Windows is unsigned, so SmartScreen will warn. Verify with SHA256SUMS."
+            --notes "Two viewers, built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Both for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). The macOS packages are signed with a Developer ID and notarized; Windows is unsigned, so SmartScreen will warn. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
