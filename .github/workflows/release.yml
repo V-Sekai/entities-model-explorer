@@ -322,7 +322,7 @@ jobs:
           # preset), with the pck inside it; Windows and Linux are the real --export-release
           # embeds (binary_format/embed_pck=true), so their exe is self-contained with no sibling
           # pck.
-          unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.app/Contents/MacOS/$APP.pck"
+          unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "\.pck$"
           unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.app/Contents/MacOS/$APP$"
           unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
           ! unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.pck"

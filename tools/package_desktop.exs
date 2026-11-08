@@ -389,6 +389,16 @@ defmodule PackageDesktop do
   # layout Windows and Linux already use beside their single exe. Returns the dir those siblings
   # go in.
   #
+  # Godot's macOS exporter names Contents/MacOS/<exe> after the PROJECT's own
+  # application/config/name (project.godot), not after the export path we give it -- it builds
+  # "Contents/MacOS/" + pkg_name from get_project_setting("application/config/name") and renames
+  # the template binary to that, regardless of what p_path (our <app>.app) is named
+  # (platform/macos/export/export_plugin.cpp). project.godot's config/name is the fixed
+  # "ModelExplorer", shared by every variant, so patch_project_name/2 below overwrites that in
+  # this run's throwaway `src` copy (same trick patch_embed_templates/1 already uses on
+  # export_presets.cfg) so the exe inside the bundle is actually named <app>, matching the
+  # Windows/Linux exes and what the rest of this script and release.yml expect.
+  #
   # Uses run_tolerant/2, not run/3: this editor binary's macOS export genuinely completes (its own
   # progress log prints "[ DONE ] export" after "Code signing bundle") but the *process* then
   # exits 1 anyway, right after an unrelated "cannot connect to daemon at tcp:5037: Connection
@@ -398,19 +408,34 @@ defmodule PackageDesktop do
   # not trustworthy for this preset; success is verified from the log text and the files actually
   # on disk instead, same as the SCRIPT ERROR / missing-file checks below already do.
   defp place_binary("Mac", d, app, _suffix, _engine, _runtime, _pck_bin, src) do
-    with {:ok, godot} <- godot_bin(),
+    with :ok <- patch_project_name(src, app),
+         {:ok, godot} <- godot_bin(),
          bundle = Path.join(d, "#{app}.app"),
          {:ok, log} <- run_tolerant(godot, hl_args() ++ ["--path", src, "--export-release", "Mac", bundle]) do
       bin_dir = Path.join([bundle, "Contents", "MacOS"])
       exe = Path.join(bin_dir, app)
 
       cond do
-        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting Mac:\n#{log}"}
-        not File.dir?(bundle) -> {:error, "--export-release Mac produced no #{bundle}:\n#{log}"}
-        not File.regular?(exe) -> {:error, "--export-release Mac produced no #{exe}:\n#{log}"}
+        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting Mac:\n#{tail(log)}"}
+        not File.dir?(bundle) -> {:error, "--export-release Mac produced no #{bundle}:\n#{tail(log)}"}
+        not File.regular?(exe) -> {:error, "--export-release Mac produced no #{exe}:\n#{tail(log)}"}
         true -> with :ok <- chmod_x(exe), do: {:ok, bin_dir}
       end
     end
+  end
+
+  defp patch_project_name(src, app) do
+    path = Path.join(src, "project.godot")
+
+    patched =
+      File.read!(path)
+      |> String.split("\n")
+      |> Enum.map(fn line ->
+        if String.starts_with?(line, "config/name="), do: ~s(config/name="#{app}"), else: line
+      end)
+      |> Enum.join("\n")
+
+    File.write(path, patched)
   end
 
   defp place_binary(preset, d, app, suffix, _engine, _runtime, _pck_bin, src) do
@@ -418,8 +443,8 @@ defmodule PackageDesktop do
          exe = Path.join(d, "#{app}#{suffix}"),
          {:ok, log} <- run(godot, hl_args() ++ ["--path", src, "--export-release", preset, exe]) do
       cond do
-        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{log}"}
-        not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{log}"}
+        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{tail(log)}"}
+        not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{tail(log)}"}
         true -> with :ok <- chmod_x(exe), do: {:ok, d}
       end
     end
