@@ -364,17 +364,26 @@ defmodule PackageDesktop do
     d = Path.join([out, variant, os, app])
 
     with :ok <- clean(d),
-         {:ok, bin_dir} <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src) do
+         {:ok, bin_dir, res_dir} <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src) do
+      # Mach-O siblings stay beside the executable in bin_dir (Contents/MacOS on macOS, the
+      # flat package dir on Windows/Linux) -- codesign signs them fine there.
       with :ok <- File.cp(Path.join(engine, fdb_client), Path.join(bin_dir, fdb_client)),
            :ok <- File.cp(Path.join(engine, "fdbserver.#{server_platform}"), Path.join(bin_dir, "fdbserver#{suffix}")),
            :ok <- chmod_x(Path.join(bin_dir, "fdbserver#{suffix}")),
            :ok <- File.cp(Path.join(engine, "fdbcli.#{server_platform}"), Path.join(bin_dir, "fdbcli#{suffix}")),
            :ok <- chmod_x(Path.join(bin_dir, "fdbcli#{suffix}")),
-           :ok <- File.cp(Path.join(engine, "LICENSE-model-explorer.txt"), Path.join(bin_dir, "LICENSE-model-explorer.txt")),
-           :ok <- File.cp(Path.join(notices, "LICENSE.md"), Path.join(bin_dir, "LICENSE.md")),
-           :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(bin_dir, "NOTICE")),
-           :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(bin_dir, "CITATION.cff")),
-           :ok <- link_weights(bin_dir, weights, w),
+           # Non-Mach-O payload (licenses, auto-rig weights) goes in res_dir. On macOS that is
+           # Contents/Resources (res_dir != bin_dir there): a non-Mach-O file sitting loose in
+           # Contents/MacOS makes both Apple's codesign and rcodesign fail with "we do not know
+           # how to handle this scenario" / "encountered a non Mach-O file with a nested rule",
+           # which then fails notarization. On Windows/Linux res_dir == bin_dir (flat layout,
+           # unaffected). AutoRig.gd / Motion.gd's weights_dir() looks in Contents/Resources on
+           # macOS to match.
+           :ok <- File.cp(Path.join(engine, "LICENSE-model-explorer.txt"), Path.join(res_dir, "LICENSE-model-explorer.txt")),
+           :ok <- File.cp(Path.join(notices, "LICENSE.md"), Path.join(res_dir, "LICENSE.md")),
+           :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(res_dir, "NOTICE")),
+           :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(res_dir, "CITATION.cff")),
+           :ok <- link_weights(res_dir, weights, w),
            :ok <- link_bintr(bin_dir, os) do
         :ok
       end
@@ -413,13 +422,18 @@ defmodule PackageDesktop do
          bundle = Path.join(d, "#{app}.app"),
          {:ok, log} <- run_tolerant(godot, hl_args() ++ ["--path", src, "--export-release", "Mac", bundle]) do
       bin_dir = Path.join([bundle, "Contents", "MacOS"])
+      res_dir = Path.join([bundle, "Contents", "Resources"])
       exe = Path.join(bin_dir, app)
 
       cond do
         String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting Mac:\n#{tail(log)}"}
         not File.dir?(bundle) -> {:error, "--export-release Mac produced no #{bundle}:\n#{tail(log)}"}
         not File.regular?(exe) -> {:error, "--export-release Mac produced no #{exe}:\n#{tail(log)}"}
-        true -> with :ok <- chmod_x(exe), do: {:ok, bin_dir}
+        true ->
+          with :ok <- chmod_x(exe),
+               :ok <- File.mkdir_p(res_dir) do
+            {:ok, bin_dir, res_dir}
+          end
       end
     end
   end
@@ -445,7 +459,7 @@ defmodule PackageDesktop do
       cond do
         String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{tail(log)}"}
         not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{tail(log)}"}
-        true -> with :ok <- chmod_x(exe), do: {:ok, d}
+        true -> with :ok <- chmod_x(exe), do: {:ok, d, d}
       end
     end
   end

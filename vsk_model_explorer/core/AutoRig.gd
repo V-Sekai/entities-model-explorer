@@ -113,6 +113,10 @@ func weights_dir() -> String:
 	var base := OS.get_executable_path().get_base_dir()
 	if OS.has_feature("editor"):
 		base = ProjectSettings.globalize_path("res://")
+	elif OS.get_name() == "macOS":
+		# See Motion.gd's weights_dir(): the macOS .app bundle ships weights in
+		# Contents/Resources, not beside the executable in Contents/MacOS.
+		base = base.path_join("../Resources")
 	return base.path_join("w")
 
 
