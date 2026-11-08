@@ -153,15 +153,17 @@ jobs:
           git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
 
-      # The skintokens-viewer auto-rig weights (R auto-rigs a dropped-in model), from the HF repo
-      # chibifire/interactor-skintokens-viewer. Public: no HF token needed.
+      # The skintokens-viewer auto-rig weights (R auto-rigs a dropped-in model), a format change
+      # of VAST-AI/SkinTokens published as the HF repo chibifire/SkinTokens-GGUF-BF16 (the
+      # interactor-skintokens-viewer HF repo itself only hosts the three OS packages, not the
+      # loose weight files). Public: no HF token needed.
       - name: Fetch the skintokens auto-rig weights
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/weights"
           for f in mesh-encoder.gguf skin-vae.gguf tokenrig.gguf; do
             curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
-              "https://huggingface.co/chibifire/interactor-skintokens-viewer/resolve/main/$f"
+              "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
           done
           ls -la "$RUNNER_TEMP/weights"
 
