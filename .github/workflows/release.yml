@@ -206,6 +206,11 @@ jobs:
       - name: Package macOS, Windows and Linux
         run: |
           set -eu
+          # place_binary/8 (package_desktop.exs) runs --export-release for Windows/Linux, so this
+          # step needs GODOT too -- a separate `run:` step is a fresh shell, so "Export the pck"'s
+          # `export` does not carry over (CI run 42483764079: fell back to the macOS editor
+          # path, which was never fetched on this runner -- enoent).
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
           mkdir -p "$RUNNER_TEMP/no-weights"
           elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$RUNNER_TEMP/no-weights" walk-mode

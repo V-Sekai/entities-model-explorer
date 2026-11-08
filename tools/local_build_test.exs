@@ -170,6 +170,12 @@ defmodule LocalBuildTest do
     no_weights = Path.join(work, "no-weights")
     File.mkdir_p!(no_weights)
 
+    # NOTE: this harness runs pck export and packaging in one BEAM process, so GODOT set by
+    # export_pck/5's System.put_env is still visible here. release.yml runs them as separate
+    # `run:` steps (fresh shell each time), so it must `export GODOT=...` again in its own
+    # "Package macOS, Windows and Linux" step -- CI run 42483764079 caught this the hard way
+    # (fell back to package_desktop.exs's macOS-editor default, enoent on a Linux runner). This
+    # harness cannot reproduce that step-boundary class of bug; release.yml is the real gate for it.
     case run("elixir", ["tools/package_desktop.exs", "package", Path.join(work, "out"), no_weights, "walk-mode"]) do
       {:ok, _} -> :ok
       e -> e
