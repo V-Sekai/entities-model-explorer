@@ -153,7 +153,9 @@ defmodule LocalBuildTest do
       {"STATION_DIR", Path.join(cache, "station")}
     ]
 
-    case run("elixir", ["tools/package_desktop.exs", "pck", Path.join(work, "out")], cd: here, env: env) do
+    Enum.each(env, fn {k, v} -> System.put_env(k, v) end)
+
+    case run("elixir", ["tools/package_desktop.exs", "pck", Path.join(work, "out")], cd: here) do
       {:ok, _} -> :ok
       e -> e
     end
