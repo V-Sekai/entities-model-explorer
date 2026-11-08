@@ -20,7 +20,8 @@ defmodule LocalBuildTest do
                    SHA256SUMS)
   @cli_files ~w(fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe)
   @station_sha "d9c0f0f916c1e7280fab4f09fc685c6ea679d814"
-  @app "walk-mode-viewer"
+  @app "skintokens-viewer"
+  @weights ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)
 
   def main(argv) do
     case run(argv) do
@@ -50,7 +51,7 @@ defmodule LocalBuildTest do
       with :ok <- maybe_fetch(skip_fetch, here, cache, engine, notices, engine_tag, fdb_release),
            :ok <- export_pck(here, engine, notices, cache, work),
            :ok <- package(work),
-           tgz = Path.join([work, "out", "walk-mode", "#{@app}-linux-x86_64.tar.gz"]),
+           tgz = Path.join([work, "out", "skintokens", "#{@app}-linux-x86_64.tar.gz"]),
            :ok <- (if File.regular?(tgz), do: :ok, else: {:error, "package left no #{tgz}"}),
            d = Path.join(work, "extracted"),
            :ok <- File.mkdir_p(d),
@@ -84,9 +85,11 @@ defmodule LocalBuildTest do
          # package_desktop.exs's "package" step lays out macOS, Windows AND Linux unconditionally,
          # even when only the Linux leg is run here, so all three templates are needed. Windows
          # and Linux are the real --export-release embed_pck templates (patch_embed_templates/1
-         # in package_desktop.exs points custom_template/release at them); macOS keeps the
-         # sibling-pck fallback.
+         # in package_desktop.exs points custom_template/release at them); macOS needs the same
+         # zipped macos_template.app structure release.yml's "Build the macOS export template"
+         # step builds (a bare Mach-O binary makes Godot's macOS exporter fail outright).
          :ok <- gh_release_download(engine_tag, "V-Sekai-fire/entities-zone", @engine_files, engine),
+         :ok <- build_macos_template(engine),
          :ok <- Enum.reduce_while(Enum.filter(@engine_files, &String.starts_with?(&1, ["godot.", "fdbserver."])), :ok, fn f, _ ->
            case chmod_x(Path.join(engine, f)) do
              :ok -> {:cont, :ok}
@@ -111,9 +114,43 @@ defmodule LocalBuildTest do
          {:ok, _} <- run("git", ["-C", Path.join(cache, "station"), "checkout", "-q", @station_sha]),
          :ok <- File.mkdir_p(notices),
          {:ok, _} <- File.copy(Path.join(here, "LICENSE"), Path.join(notices, "LICENSE.md")),
-         :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, walk mode viewer (local build test)\n"),
+         :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, skintokens viewer (local build test)\n"),
          :ok <- File.write(Path.join(notices, "CITATION.cff"), ~s(cff-version: 1.2.0\nmessage: "local build test"\ntitle: "V-Sekai Model Explorer"\n)) do
       :ok
+    end
+  end
+
+  # Mirrors release.yml's "Build the macOS export template" step: Godot's macOS exporter wants a
+  # zipped macos_template.app/Contents/{MacOS/godot_macos_release.arm64,Info.plist}, not the bare
+  # Mach-O binary ENGINE otherwise has.
+  defp build_macos_template(engine) do
+    app = Path.join(engine, "macos_template.app")
+    mac = Path.join(app, "Contents/MacOS")
+    File.mkdir_p!(mac)
+
+    with {:ok, _} <- File.cp(Path.join(engine, "godot.macos.template_release.double.arm64"), Path.join(mac, "godot_macos_release.arm64")),
+         :ok <- chmod_x(Path.join(mac, "godot_macos_release.arm64")),
+         :ok <- File.write(Path.join(app, "Contents/PkgInfo"), "APPL????"),
+         :ok <- File.write(Path.join(app, "Contents/Info.plist"), ~s(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>$binary</string>
+  <key>CFBundleName</key><string>$name</string>
+  <key>CFBundleDisplayName</key><string>$name</string>
+  <key>CFBundleIdentifier</key><string>$bundle_identifier</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$short_version</string>
+  <key>CFBundleSignature</key><string>$signature</string>
+  <key>CFBundleVersion</key><string>$version</string>
+  <key>NSHumanReadableCopyright</key><string>$copyright</string>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.$app_category</string>
+  <key>NSHighResolutionCapable</key>$highres
+</dict></plist>
+)),
+         {:ok, _} <- run("zip", ["-qry", Path.join(engine, "macos-template.zip"), "."], cd: app) do
+      File.rm_rf(app)
     end
   end
 
@@ -167,8 +204,12 @@ defmodule LocalBuildTest do
 
   defp package(work) do
     IO.puts("== packaging the linux build (real --export-release embed_pck)")
-    no_weights = Path.join(work, "no-weights")
-    File.mkdir_p!(no_weights)
+    # skintokens needs its three weight files present in <w> (package_desktop.exs's need_files),
+    # even though this harness only exercises the Linux leg; empty placeholders are enough to
+    # satisfy the check and exercise link_weights/3's copy path.
+    weights = Path.join(work, "weights")
+    File.mkdir_p!(weights)
+    Enum.each(@weights, &File.write!(Path.join(weights, &1), ""))
 
     # NOTE: this harness runs pck export and packaging in one BEAM process, so GODOT set by
     # export_pck/5's System.put_env is still visible here. release.yml runs them as separate
@@ -176,7 +217,7 @@ defmodule LocalBuildTest do
     # "Package macOS, Windows and Linux" step -- CI run 42483764079 caught this the hard way
     # (fell back to package_desktop.exs's macOS-editor default, enoent on a Linux runner). This
     # harness cannot reproduce that step-boundary class of bug; release.yml is the real gate for it.
-    case run("elixir", ["tools/package_desktop.exs", "package", Path.join(work, "out"), no_weights, "walk-mode"]) do
+    case run("elixir", ["tools/package_desktop.exs", "package", Path.join(work, "out"), weights, "skintokens"]) do
       {:ok, _} -> :ok
       e -> e
     end
