@@ -323,9 +323,10 @@ defmodule Release do
          sha = String.trim(sha),
          _ = cap("git", ["-C", me, "worktree", "remove", "--force", src]),
          {:ok, _} <- cap("git", ["-C", me, "worktree", "add", "--detach", src, sha]),
-         :ok <- need(src, ~w(tools/package_desktop.sh tools/licences/licgen.py)),
-         {:ok, pkg} <- File.read(Path.join(src, "tools/package_desktop.sh")),
-         true <- String.contains?(pkg, "walk-mode)") || {:error, "#{ctx.ref} predates the walk-mode package (tools/package_desktop.sh)"} do
+         :ok <- need(src, ~w(tools/licences/licgen.py)),
+         {:ok, {_cmd, pkg_path}} <- pkg_script(src),
+         {:ok, pkg} <- File.read(pkg_path),
+         true <- String.contains?(pkg, "walk-mode") || {:error, "#{ctx.ref} predates the walk-mode package (#{Path.basename(pkg_path)})"} do
       source(ctx, "viewer source V-Sekai-fire/entities-model-explorer #{sha} (#{ctx.ref})")
 
       Enum.reduce_while(@viewers, :ok, fn v, _ ->
@@ -367,8 +368,9 @@ defmodule Release do
 
     with :ok <- check_sums(elf, @elfs),
          :ok <- control("guest ELFs", elf, @elfs),
-         {:ok, log} <- cap("sh", [Path.join(ctx.dir, "model-explorer/tools/package_desktop.sh"), "pck", out], env),
-         true <- String.contains?(log, "PCK-OK") || {:error, "package_desktop.sh pck printed no PCK-OK"},
+         {:ok, {cmd, script}} <- pkg_script(Path.join(ctx.dir, "model-explorer")),
+         {:ok, log} <- cap(cmd, [script, "pck", out], env),
+         true <- String.contains?(log, "PCK-OK") || {:error, "#{Path.basename(script)} pck printed no PCK-OK"},
          {:ok, bin} <- File.read(Path.join(out, "skintokens-viewer.pck")),
          {:ok, files} <- pck_files(bin) do
       Enum.reduce_while(@elfs, :ok, fn f, _ ->
@@ -387,9 +389,11 @@ defmodule Release do
 
     Enum.reduce_while(@viewers, :ok, fn v, _ ->
       env = [{"ENGINE", Path.join(ctx.dir, "engine")}, {"SANDBOX", Path.join(ctx.dir, "sandbox")},
+             {"GODOT", Path.join(ctx.dir, "engine/" <> @editor)},
              {"NOTICES", Path.join([ctx.dir, "notices", v.key])}]
 
-      with {:ok, log} <- cap("sh", [Path.join(ctx.dir, "model-explorer/tools/package_desktop.sh"), "package", out, Path.join(ctx.dir, "w"), v.key], env),
+      with {:ok, {cmd, script}} <- pkg_script(Path.join(ctx.dir, "model-explorer")),
+           {:ok, log} <- cap(cmd, [script, "package", out, Path.join(ctx.dir, "w"), v.key], env),
            true <- String.contains?(log, "PACKAGE-OK") || {:error, "#{v.key}: no PACKAGE-OK"},
            # The archives are the release; the per-OS folders they were made from are not kept.
            :ok <- Enum.reduce_while(~w(macos windows linux), :ok, fn os, _ ->
@@ -1334,6 +1338,19 @@ defmodule Release do
   end
 
   defp read_entries(_, _, _, _, _), do: {:error, "truncated pck directory"}
+
+  # Prefers tools/package_desktop.exs (the Elixir port); falls back to tools/package_desktop.sh
+  # for an older --ref checked out from before the port, so a historical release still builds.
+  defp pkg_script(src) do
+    exs = Path.join(src, "tools/package_desktop.exs")
+    sh = Path.join(src, "tools/package_desktop.sh")
+
+    cond do
+      File.exists?(exs) -> {:ok, {"elixir", exs}}
+      File.exists?(sh) -> {:ok, {"sh", sh}}
+      true -> {:error, "no tools/package_desktop.exs or .sh in #{src}"}
+    end
+  end
 
   defp cap(cmd, args, env \\ [], cd \\ nil) do
     case System.find_executable(cmd) do
