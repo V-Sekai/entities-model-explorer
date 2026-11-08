@@ -361,7 +361,7 @@ defmodule PackageDesktop do
   # exports with the right icon baked in by Godot's own exporter -- no post-hoc icon swap on the
   # built binary needed. iOS/Android/Web presets are untouched (not built by this script).
   defp patch_icon(path, variant) do
-    {icns, ico} = Map.get(@icons, variant, @default_icons)
+    {icns, ico} = icon_files(variant)
     icns_path = "res://#{@icon_dir}/#{icns}"
     ico_path = "res://#{@icon_dir}/#{ico}"
 
@@ -388,6 +388,8 @@ defmodule PackageDesktop do
     File.write(path, Enum.join(patched, "\n"))
   end
 
+  defp icon_files(variant), do: Map.get(@icons, variant, @default_icons)
+
   defp need_files(dir, names, what) do
     missing = Enum.reject(names, &File.exists?(Path.join(dir, &1)))
 
@@ -410,7 +412,7 @@ defmodule PackageDesktop do
     d = Path.join([out, variant, os, app])
 
     with :ok <- clean(d),
-         {:ok, bin_dir, res_dir} <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src) do
+         {:ok, bin_dir, res_dir} <- place_binary(preset, d, app, suffix, engine, runtime, pck_bin, src, variant) do
       # Mach-O siblings stay beside the executable in bin_dir (Contents/MacOS on macOS, the
       # flat package dir on Windows/Linux) -- codesign signs them fine there.
       with :ok <- File.cp(Path.join(engine, fdb_client), Path.join(bin_dir, fdb_client)),
@@ -462,7 +464,7 @@ defmodule PackageDesktop do
   # repo has ever run; Windows/Linux --export-release never print it). The exit code is therefore
   # not trustworthy for this preset; success is verified from the log text and the files actually
   # on disk instead, same as the SCRIPT ERROR / missing-file checks below already do.
-  defp place_binary("Mac", d, app, _suffix, _engine, _runtime, _pck_bin, src) do
+  defp place_binary("Mac", d, app, _suffix, _engine, _runtime, _pck_bin, src, variant) do
     with :ok <- patch_project_name(src, app),
          {:ok, godot} <- godot_bin(),
          bundle = Path.join(d, "#{app}.app"),
@@ -477,10 +479,31 @@ defmodule PackageDesktop do
         not File.regular?(exe) -> {:error, "--export-release Mac produced no #{exe}:\n#{tail(log)}"}
         true ->
           with :ok <- chmod_x(exe),
-               :ok <- File.mkdir_p(res_dir) do
+               :ok <- File.mkdir_p(res_dir),
+               :ok <- ensure_bundle_icon(src, res_dir, variant) do
             {:ok, bin_dir, res_dir}
           end
       end
+    end
+  end
+
+  # Belt and suspenders: this engine's macOS exporter cross-builds from the Linux-hosted editor
+  # (release.yml runs GODOT=godot.linuxbsd.editor...), and CI proved it can silently finish a
+  # macOS export with NO icon file at all inside Contents/Resources even though
+  # export_presets.cfg's application/icon is set correctly (patch_icon/2 above) and the editor's
+  # own log shows no error -- a real build was downloaded and inspected (iFire: "double check"),
+  # Info.plist still said CFBundleIconFile=icon.icns but no such file existed anywhere in the
+  # bundle. Rather than depend on the exporter's own icon-embedding path (whatever platform-
+  # specific step it skips when cross-building), copy this variant's .icns into
+  # Contents/Resources/icon.icns ourselves, unconditionally, after every Mac export.
+  defp ensure_bundle_icon(src, res_dir, variant) do
+    {icns, _ico} = icon_files(variant)
+    source = Path.join([src, @icon_dir, icns])
+    dest = Path.join(res_dir, "icon.icns")
+
+    case File.cp(source, dest) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "cannot copy #{source} to #{dest}: #{reason}"}
     end
   end
 
@@ -498,7 +521,7 @@ defmodule PackageDesktop do
     File.write(path, patched)
   end
 
-  defp place_binary(preset, d, app, suffix, _engine, _runtime, _pck_bin, src) do
+  defp place_binary(preset, d, app, suffix, _engine, _runtime, _pck_bin, src, _variant) do
     with {:ok, godot} <- godot_bin(),
          exe = Path.join(d, "#{app}#{suffix}"),
          {:ok, log} <- run(godot, hl_args() ++ ["--path", src, "--export-release", preset, exe]) do
