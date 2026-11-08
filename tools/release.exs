@@ -444,7 +444,7 @@ defmodule Release do
 
   defp archives(v) do
     mac = if v.mac_zip, do: ["#{v.app}-macos-arm64.zip", "#{v.app}-macos-arm64.dmg"], else: ["#{v.app}-macos-arm64.dmg"]
-    mac ++ ["#{v.app}-windows-x86_64.zip", "#{v.app}-linux-x86_64.tar"]
+    mac ++ ["#{v.app}-windows-x86_64.zip", "#{v.app}-linux-x86_64.tar.gz"]
   end
 
   # The image is signed with the Developer ID and notarized only when this Mac already holds the
@@ -677,7 +677,7 @@ defmodule Release do
       exe = Path.join(d, v.app)
 
       with :ok <- clean(d),
-           {:ok, _} <- cap("tar", ["-xf", Path.join([ctx.dir, "pck", v.key, "#{v.app}-linux-x86_64.tar"]), "-C", d]),
+           {:ok, _} <- cap("tar", ["-xf", Path.join([ctx.dir, "pck", v.key, "#{v.app}-linux-x86_64.tar.gz"]), "-C", d]),
            {:ok, bin} <- File.read(exe),
            :ok <- elf_x86_64(bin, "linux #{v.key}"),
            {:error, _} <- elf_x86_64(<<0x7F, "ELF", 2, 1, 1, 0::size(72), 3::little-16, 183::little-16>>, "control"),

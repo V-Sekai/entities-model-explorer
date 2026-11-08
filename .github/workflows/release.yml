@@ -213,10 +213,10 @@ jobs:
           cat SHA256SUMS
           # A package that cannot be read back is a failed build.
           for z in *.zip; do unzip -tq "$z"; done
-          for t in *.tar; do tar -tf "$t" > /dev/null; done
+          for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
           unzip -l "$APP-$tag-macos-arm64.zip" | grep -q "$APP.pck"
           unzip -l "$APP-$tag-windows-x86_64.zip" | grep -q "$APP.exe"
-          tar -tf "$APP-$tag-linux-x86_64.tar" | grep -q "$APP.pck"
+          tar -tzf "$APP-$tag-linux-x86_64.tar.gz" | grep -q "$APP.pck"
 
       # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then notarize.
       # rcodesign does both from Linux; a zip of a signed executable and library is an accepted notary asset.
@@ -303,7 +303,7 @@ jobs:
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
           case "$RUNNER_OS" in
-            Linux) tar -xf "$GITHUB_WORKSPACE"/dist/*-linux-x86_64.tar; exe=./$APP ;;
+            Linux) tar -xzf "$GITHUB_WORKSPACE"/dist/*-linux-x86_64.tar.gz; exe=./$APP ;;
             macOS) unzip -q "$GITHUB_WORKSPACE"/dist/*-macos-arm64.zip; exe=./$APP; chmod +x $APP fdbserver fdbcli ;;
             Windows) 7z x -y "$GITHUB_WORKSPACE"/dist/*-windows-x86_64.zip > /dev/null; exe=./$APP.exe ;;
           esac

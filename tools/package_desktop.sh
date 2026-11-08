@@ -177,10 +177,10 @@ lay linux godot.linuxbsd.template_release.double.x86_64 "" \
 # Archives hold the files at the top level: Explorer and Archive Utility already extract into a folder
 # named after the archive, so a top folder inside it would give <app>-*/<app>/.
 o="$out/$variant"
-rm -f "$o/$app"-*.zip "$o/$app"-*.tar
+rm -f "$o/$app"-*.zip "$o/$app"-*.tar "$o/$app"-*.tar.gz
 (cd "$o/macos/$app" && zip -qry -n .gguf "$o/$app-macos-arm64.zip" .)
 (cd "$o/windows/$app" && zip -qr -n .gguf "$o/$app-windows-x86_64.zip" .)
-(cd "$o/linux/$app" && python3 - "$o/$app-linux-x86_64.tar" <<'PY'
+(cd "$o/linux/$app" && python3 - "$o/$app-linux-x86_64.tar.gz" <<'PY'
 import sys, os, tarfile
 out_tar = sys.argv[1]
 base = os.path.abspath('.')
@@ -191,12 +191,12 @@ for root, dirs, flist in os.walk(base):
         if f.startswith("._"): continue
         rel = os.path.relpath(os.path.join(root,f), base)
         files.append((rel, os.path.join(root,f)))
-with tarfile.open(out_tar,"w") as t:
+with tarfile.open(out_tar,"w:gz", compresslevel=6) as t:
     for rel, full in files:
         t.add(full, arcname=rel)
 PY
 )
-(cd "$o" && sha256sum "$app"-*.zip "$app"-*.tar > SHA256SUMS 2>/dev/null \
-  || shasum -a 256 "$app"-*.zip "$app"-*.tar > SHA256SUMS)
+(cd "$o" && sha256sum "$app"-*.zip "$app"-*.tar.gz > SHA256SUMS 2>/dev/null \
+  || shasum -a 256 "$app"-*.zip "$app"-*.tar.gz > SHA256SUMS)
 cat "$o/SHA256SUMS"
 echo PACKAGE-OK
