@@ -397,7 +397,7 @@ jobs:
           sign "$mac/fdbserver"
           sign "$mac/fdbcli"
           sign --entitlements-xml-path "$S/entitlements.plist" "$app"
-          "$RC" verify "$app"
+          "$RC" verify "$mac/$APP"
           rm -f "$zip"
           (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
           "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 "$zip"
