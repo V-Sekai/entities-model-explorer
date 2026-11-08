@@ -224,10 +224,10 @@ defmodule PackageDesktop do
     with {:ok, json} <- run("gh", ["run", "list", "-R", repo, "--workflow", "guest", "--branch", branch,
                                     "--status", "success", "--limit", "1", "--json", "databaseId",
                                     "--jq", ".[0].databaseId"]),
-         run_id when run_id != "" <- String.trim(json) || {:error, "no green guest run on #{repo} #{branch}"},
+         {:ok, run_id} <- nonempty(json, "no green guest run on #{repo} #{branch}"),
          {:ok, art_json} <- run("gh", ["api", "repos/#{repo}/actions/runs/#{run_id}/artifacts", "--jq",
                                         ~s/.artifacts | map(select(.name | startswith("headfit-elf-"))) | .[0].name/]),
-         name when name != "" and name != "null" <- String.trim(art_json) || {:error, "#{repo} run #{run_id} has no headfit-elf- artifact"},
+         {:ok, name} <- nonempty(art_json, "#{repo} run #{run_id} has no headfit-elf- artifact"),
          :ok <- clean(ci),
          {:ok, _} <- run("gh", ["run", "download", run_id, "-R", repo, "-n", name, "-D", ci]),
          {:ok, siblings} <- File.read(Path.join(ci, "headfit.elf.siblings.txt")),
@@ -529,6 +529,16 @@ defmodule PackageDesktop do
       nil -> raise "#{name} is required"
       "" -> raise "#{name} is required"
       v -> v
+    end
+  end
+
+  # Elixir's `||` only falls through on nil/false, not on "": a trimmed empty or literal "null"
+  # string (gh's --jq prints "null" for a missing field) must be checked explicitly.
+  defp nonempty(s, err) do
+    case String.trim(s) do
+      "" -> {:error, err}
+      "null" -> {:error, err}
+      v -> {:ok, v}
     end
   end
 
