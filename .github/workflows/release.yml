@@ -2,10 +2,10 @@ name: Release
 # Run it (workflow_dispatch) on the commit to release. Nobody types a tag: the base tag is computed from the
 # commit (RFD66606-2312, "release tags are go pseudo-versions"), v0.0.0-<UTC committer time YYYYMMDDhhmmss>-
 # <12 hex>, so it sorts by time in a file listing and parses as a version in Mix, Cargo, npm and Go. Each
-# platform gets its OWN release and its OWN tag, <base>-<platform> (linux, macos, windows, enginebins): the
-# four chains (package -> verify -> publish, or just publish for enginebins) are independent jobs with no job
-# between them that waits on every platform, so one platform's release ships as soon as it is ready instead of
-# all four blocking on the slowest. The `stage` input (dev, beta, rc, release) is not in the tag: it moves a
+# platform gets its OWN release and its OWN tag, <base>-<platform> (linux, macos, windows): the three
+# chains (package -> verify -> publish) are independent jobs with no job between them that waits on every
+# platform, so one platform's release ships as soon as it is ready instead of all three blocking on the
+# slowest. The `stage` input (dev, beta, rc, release) is not in the tag: it moves a
 # per-platform stage pointer tag (<stage>-<platform>) to the commit and sets the GitHub pre-release flag
 # (everything but release). Per-platform pointers avoid four jobs racing to force-update the same ref.
 # `publish: false` builds the packages and uploads them as workflow artifacts only. The CITATION.cff that
@@ -84,65 +84,6 @@ jobs:
           echo "$tag" | grep -Eq '^v0\.0\.0-[0-9]{14}-[0-9a-f]{12}$' || { echo "bad tag $tag"; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Base tag: $tag, stage: $STAGE" >> "$GITHUB_STEP_SUMMARY"
-
-  # Re-publishes the entities-zone engine binaries this release pins, as their own release here. No
-  # packaging, no verify (entities-zone already built and tested them) -- so this is the fastest of the four
-  # chains and ships independently of the viewer builds.
-  publish-enginebins:
-    needs: tag
-    if: ${{ inputs.publish != false }}
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ needs.tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Mint a GitHub App token for entities-zone
-        id: app
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.PERSONA_APP_ID }}
-          private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
-          owner: V-Sekai-fire
-      - name: Fetch the engine binaries from entities-zone
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: |
-          set -eu
-          mkdir dist
-          cd dist
-          for f in godot.linuxbsd.editor.double.x86_64 \
-                   godot.macos.editor.double.arm64 \
-                   godot.windows.editor.double.x86_64.llvm.exe \
-                   godot.linuxbsd.template_release.double.x86_64 \
-                   godot.macos.template_release.double.arm64 \
-                   godot.windows.template_release.double.x86_64.llvm.exe \
-                   libfdb_c.so libfdb_c.dylib fdb_c.dll SHA256SUMS; do
-            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
-          done
-          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
-          [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
-          sha256sum -c wanted.sums
-          rm wanted.sums
-          for src in godot.linuxbsd.editor.double.x86_64 godot.macos.editor.double.arm64 \
-                     godot.windows.editor.double.x86_64.llvm.exe godot.linuxbsd.template_release.double.x86_64 \
-                     godot.macos.template_release.double.arm64 godot.windows.template_release.double.x86_64.llvm.exe; do
-            mv "$src" "godot-$TAG-${src#godot.}"
-          done
-          sha256sum * | grep -v ' SHA256SUMS$' > ../new.sums && mv ../new.sums SHA256SUMS
-          cat SHA256SUMS
-      - name: Create the entities-zone engine binaries release
-        run: |
-          set -eu
-          full="$TAG-enginebins"
-          ! gh release view "$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $full exists"; exit 1; }
-          flags=""
-          [ "$STAGE" = release ] || flags="--prerelease"
-          gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
-            --title "Model Explorer $full ($STAGE) -- entities-zone engine binaries" --generate-notes \
-            --notes "The double-precision Godot editor and export templates for Linux, macOS and Windows, re-published from V-Sekai-fire/entities-zone@$ENGINE_TAG, plus the matching FoundationDB client libraries. Pinned by the Model Explorer release $TAG. Verify with SHA256SUMS."
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-enginebins" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
-            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-enginebins" -f sha="$GITHUB_SHA" >/dev/null
-          echo "Stage pointer $STAGE-enginebins -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   # --- linux ---------------------------------------------------------------------------------------------
   package-linux:
@@ -313,8 +254,7 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
-                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -325,18 +265,10 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
-          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
+          for app in skintokens-viewer walk-mode-viewer; do
             tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
             ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
           done
-      - name: Ship the matching editor and export template
-        run: |
-          set -eu
-          cd dist
-          cp "$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64" "godot-editor-$TAG-linux-x86_64"
-          cp "$RUNNER_TEMP/engine/godot.linuxbsd.template_release.double.x86_64" "godot-template-release-$TAG-linux-x86_64"
-          chmod +x "godot-editor-$TAG-linux-x86_64" "godot-template-release-$TAG-linux-x86_64"
-          sha256sum * > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: model-explorer-linux
@@ -349,7 +281,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
+        app: [skintokens-viewer, walk-mode-viewer]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -409,7 +341,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Linux" --generate-notes \
-            --notes "Three viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Two viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-linux -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -624,8 +556,7 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
-                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -636,18 +567,10 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
+          for app in skintokens-viewer walk-mode-viewer; do
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "\.pck$"
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "$app.app/Contents/MacOS/$app$"
           done
-      - name: Ship the matching editor and export template
-        run: |
-          set -eu
-          cd dist
-          cp "$RUNNER_TEMP/engine/godot.macos.editor.double.arm64" "godot-editor-$TAG-macos-arm64"
-          cp "$RUNNER_TEMP/engine/godot.macos.template_release.double.arm64" "godot-template-release-$TAG-macos-arm64"
-          chmod +x "godot-editor-$TAG-macos-arm64" "godot-template-release-$TAG-macos-arm64"
-          sha256sum * > SHA256SUMS
       # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then
       # notarize. rcodesign does both from Linux; a zip of a signed executable and library is an accepted
       # notary asset.
@@ -686,7 +609,7 @@ jobs:
           PLIST
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization --code-signature-flags runtime "$@"; }
           tag="$TAG"
-          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
+          for app in skintokens-viewer walk-mode-viewer; do
             zip="dist/$app-$tag-macos-arm64.zip"
             rm -rf "$S/pkg"; mkdir -p "$S/pkg"
             unzip -q "$zip" -d "$S/pkg"
@@ -715,7 +638,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
+        app: [skintokens-viewer, walk-mode-viewer]
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -777,7 +700,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- macOS" --generate-notes \
-            --notes "Three viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Signed with a Developer ID and notarized. Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Two viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Signed with a Developer ID and notarized. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-macos -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -951,8 +874,7 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
-                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -963,18 +885,10 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
+          for app in skintokens-viewer walk-mode-viewer; do
             unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
             ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
           done
-      - name: Ship the matching editor and export template
-        run: |
-          set -eu
-          cd dist
-          cp "$RUNNER_TEMP/engine/godot.windows.editor.double.x86_64.llvm.exe" "godot-editor-$TAG-windows-x86_64.exe"
-          cp "$RUNNER_TEMP/engine/godot.windows.template_release.double.x86_64.llvm.exe" "godot-template-release-$TAG-windows-x86_64.exe"
-          chmod +x "godot-editor-$TAG-windows-x86_64.exe" "godot-template-release-$TAG-windows-x86_64.exe"
-          sha256sum * > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: model-explorer-windows
@@ -987,7 +901,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
+        app: [skintokens-viewer, walk-mode-viewer]
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -1048,7 +962,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Windows" --generate-notes \
-            --notes "Three viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Unsigned, so SmartScreen will warn. Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Two viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Unsigned, so SmartScreen will warn. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-windows -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

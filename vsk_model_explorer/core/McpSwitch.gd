@@ -5,8 +5,8 @@ extends PanelContainer
 # the saved choice does not override a port named on the command line.
 #
 # Hidden entirely (not just off) unless MCPRuntime.build_enabled() says this build may run the
-# server at all: the editor, an explicit `--mcp-port=`, or the dedicated "mcp" package variant
-# (tools/package_desktop.exs). The ordinary shipped viewers never show this card.
+# server at all: the editor, or an explicit `--mcp-port=` on the command line. No package variant
+# ships it on; every shipped viewer hides this card by default.
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
 const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
 const MCPRuntime = preload("res://addons/vsekai_godot_mcp/mcp_runtime.gd")

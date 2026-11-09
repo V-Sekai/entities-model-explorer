@@ -2,21 +2,20 @@
 # Build the desktop viewer packages with the auto-rig and its weights.
 #
 #   elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode|mcp]
+#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
 #                                                     lay out and archive the three packages
 #                                                     in <out dir>/<viewer>/ with SHA256SUMS
 #
-# One pck, four viewers. Each feature is on when its weights are in the package's w folder:
+# One pck, three viewers. Each feature is on when its weights are in the package's w folder:
 #   skintokens     skintokens-viewer, the rig weights (R auto-rigs), no Kimodo (the default)
 #   kimodo-motion  kimodo-motion-viewer, the Kimodo weights (the Motion list), no rig weights
 #   walk-mode      walk-mode-viewer, no weights (M walks a rigged model; R is unused) --
 #                  the lighter download for someone who only wants to walk a model rigged
 #                  elsewhere, shipped alongside skintokens-viewer in every release
-#   mcp            skintokens-viewer-mcp, same rig weights as skintokens plus an `mcp.enabled`
-#                  marker file. The MCP server and its on/off slider are hidden and off in
-#                  every viewer above (MCPRuntime.build_enabled() in
-#                  addons/vsekai_godot_mcp/mcp_runtime.gd) -- build this variant for an AI
-#                  agent or tools/mcp_check.py to drive, never for a public release
+#
+# The MCP server and its on/off slider are off and hidden in every viewer by default
+# (MCPRuntime.build_enabled() in addons/vsekai_godot_mcp/mcp_runtime.gd); reach it from any
+# built viewer with `-- --mcp-port=8789` on the command line. No package variant ships it on.
 #
 # Inputs (environment):
 #   GODOT    optional: the double editor that exports the pck and (for `package`) runs
@@ -89,7 +88,7 @@ defmodule PackageDesktop do
   defp usage do
     """
     elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode|mcp]
+    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
                                                       lay out and archive the three packages
                                                       in <out dir>/<viewer>/ with SHA256SUMS
     """
@@ -331,23 +330,16 @@ defmodule PackageDesktop do
   @variants %{
     "skintokens" => {"skintokens-viewer", ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)},
     "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)},
-    "walk-mode" => {"walk-mode-viewer", []},
-    "mcp" => {"skintokens-viewer-mcp", ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)}
+    "walk-mode" => {"walk-mode-viewer", []}
   }
 
-  # Only the "mcp" variant's package gets the MCP server's on/off marker file -- see
-  # mcp_runtime.gd's build_enabled()/_marker_path().
-  @mcp_marker "mcp.enabled"
-
-  # So walk-mode-viewer, skintokens-viewer-mcp and skintokens-viewer are tellable apart in the
-  # Finder/Dock/taskbar at a glance (iFire: "make sure walk and skintoken have different icons" /
-  # "add a new similar icon" for mcp), not just by their window title -- walk-mode gets a
-  # hue-shifted (blue -> yellow) icon, mcp a hue-shifted (blue -> magenta) one, both
-  # app_icon_<variant>.*, every other variant keeps the default app_icon.* (the blue cube).
+  # So walk-mode-viewer and skintokens-viewer are tellable apart in the Finder/Dock/taskbar at a
+  # glance (iFire: "make sure walk and skintoken have different icons"), not just by their window
+  # title -- walk-mode gets a distinct hue-shifted icon (app_icon_walkmode.*), every other variant
+  # keeps the default app_icon.* (the blue cube).
   @icon_dir "vsk_model_explorer/resource/icon"
   @icons %{
-    "walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"},
-    "mcp" => {"app_icon_mcp.icns", "app_icon_mcp.ico"}
+    "walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"}
   }
   @default_icons {"app_icon.icns", "app_icon.ico"}
 
@@ -446,15 +438,11 @@ defmodule PackageDesktop do
            :ok <- File.cp(Path.join(notices, "NOTICE"), Path.join(res_dir, "NOTICE")),
            :ok <- File.cp(Path.join(notices, "CITATION.cff"), Path.join(res_dir, "CITATION.cff")),
            :ok <- link_weights(res_dir, weights, w),
-           :ok <- link_bintr(bin_dir, os),
-           :ok <- maybe_write_mcp_marker(res_dir, variant) do
+           :ok <- link_bintr(bin_dir, os) do
         :ok
       end
     end
   end
-
-  defp maybe_write_mcp_marker(res_dir, "mcp"), do: File.write(Path.join(res_dir, @mcp_marker), "")
-  defp maybe_write_mcp_marker(_res_dir, _variant), do: :ok
 
   # macOS (preset "Mac"): exports a real .app bundle via --export-release, output path ending in
   # ".app" so Godot's macOS exporter writes the bundle directly instead of zipping it. The
