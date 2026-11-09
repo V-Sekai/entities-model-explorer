@@ -100,7 +100,7 @@ jobs:
         with:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
-          owner: V-Sekai-fire
+          owner: V-Sekai
       # package_desktop.exs's `package` call always lays out and exports all three OS presets
       # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), so
       # even the Linux-only job needs the full engine set on disk; only the Linux archive is kept
@@ -360,7 +360,7 @@ jobs:
         with:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
-          owner: V-Sekai-fire
+          owner: V-Sekai
       # package_desktop.exs's `package` call always lays out and exports all three OS presets
       # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), and the
       # Linux editor binary that drives --export-release everywhere is itself dynamically linked
@@ -718,7 +718,7 @@ jobs:
         with:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
-          owner: V-Sekai-fire
+          owner: V-Sekai
       # package_desktop.exs's `package` call always lays out and exports all three OS presets
       # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), so
       # even the Windows-only job needs the full engine set on disk; only the Windows archive is
