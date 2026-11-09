@@ -493,6 +493,18 @@ defmodule PackageDesktop do
     end
   end
 
+  defp place_binary(preset, d, app, suffix, _engine, _runtime, _pck_bin, src, _variant) do
+    with {:ok, godot} <- godot_bin(),
+         exe = Path.join(d, "#{app}#{suffix}"),
+         {:ok, log} <- run(godot, hl_args() ++ ["--path", src, "--export-release", preset, exe]) do
+      cond do
+        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{tail(log)}"}
+        not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{tail(log)}"}
+        true -> with :ok <- chmod_x(exe), do: {:ok, d, d}
+      end
+    end
+  end
+
   # Belt and suspenders: this engine's macOS exporter cross-builds from the Linux-hosted editor
   # (release.yml runs GODOT=godot.linuxbsd.editor...), and CI proved it can silently finish a
   # macOS export with NO icon file at all inside Contents/Resources even though
@@ -525,18 +537,6 @@ defmodule PackageDesktop do
       |> Enum.join("\n")
 
     File.write(path, patched)
-  end
-
-  defp place_binary(preset, d, app, suffix, _engine, _runtime, _pck_bin, src, _variant) do
-    with {:ok, godot} <- godot_bin(),
-         exe = Path.join(d, "#{app}#{suffix}"),
-         {:ok, log} <- run(godot, hl_args() ++ ["--path", src, "--export-release", preset, exe]) do
-      cond do
-        String.contains?(log, "SCRIPT ERROR") -> {:error, "SCRIPT ERROR exporting #{preset}:\n#{tail(log)}"}
-        not File.regular?(exe) -> {:error, "--export-release #{preset} produced no #{exe}:\n#{tail(log)}"}
-        true -> with :ok <- chmod_x(exe), do: {:ok, d, d}
-      end
-    end
   end
 
   defp link_weights(_d, [], _w), do: :ok
