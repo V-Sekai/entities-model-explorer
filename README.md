@@ -30,7 +30,11 @@ V-Sekai Model Explorer is a comprehensive 3D model viewer, designed with the pow
 
 An MCP client (an AI agent) can open a model in the viewer, auto-rig it, and take the result. The tools are `status`, `load_model`, `auto_rig`, `get_file`, `screenshot` and `persona_ask` (the persona's plan for a goal, from `persona.elf`), plus read-only scene tools (`get_scene_tree`, `get_node`, `get_property`, `find_nodes`, `get_aabb`, `get_bone_poses`, `ping`). The server is `addons/vsekai_godot_mcp` (from V-Sekai-fire/transport-godot-mcp, trimmed in `project.godot`); the tools are `vsk_model_explorer/core/RigTools.gd`.
 
-The server runs in the desktop viewer; the web viewer does not have it.
+The server runs in the desktop viewer; the web viewer does not have it. The ordinary shipped
+viewers (skintokens-viewer, walk-mode-viewer, kimodo-motion-viewer) hide the server and its
+on/off slider entirely and never listen by default. `tools/package_desktop.exs package ... mcp`
+builds a separate `skintokens-viewer-mcp` for an AI agent (or `tools/mcp_check.py`) to drive;
+running the editor directly, or passing `--mcp-port=`, also enables it on any build.
 
 - HTTP: start the viewer with `-- --mcp-port=8789`. Streamable HTTP is at `http://127.0.0.1:8789/mcp`, and the older HTTP+SSE transport is at `/sse`.
 

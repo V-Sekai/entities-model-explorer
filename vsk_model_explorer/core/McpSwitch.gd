@@ -3,8 +3,13 @@ extends PanelContainer
 # button. It shows what the server is doing now (on while it listens), the address in its tooltip, and
 # the choice is remembered (ViewerSettings "mcp"). A server started by `-- --mcp-port=N` stays as asked:
 # the saved choice does not override a port named on the command line.
+#
+# Hidden entirely (not just off) unless MCPRuntime.build_enabled() says this build may run the
+# server at all: the editor, an explicit `--mcp-port=`, or the dedicated "mcp" package variant
+# (tools/package_desktop.exs). The ordinary shipped viewers never show this card.
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
 const ViewerSettings = preload("res://vsk_model_explorer/core/ViewerSettings.gd")
+const MCPRuntime = preload("res://addons/vsekai_godot_mcp/mcp_runtime.gd")
 const HEIGHT := 48.0
 var _switch: CheckButton
 var _mcp: Node
@@ -12,8 +17,8 @@ var _mcp: Node
 
 func _ready() -> void:
 	_mcp = get_node_or_null("/root/MCP")
-	if _mcp == null or not _mcp.has_method("set_listening"):
-		queue_free()  # no server in this build (the web export has none)
+	if _mcp == null or not _mcp.has_method("set_listening") or not MCPRuntime.build_enabled():
+		queue_free()  # no server in this build (the web export, and every non-mcp desktop build)
 		return
 	theme = CardStyle.make_theme()
 	add_theme_stylebox_override("panel", CardStyle.card_box())
