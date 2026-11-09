@@ -53,7 +53,7 @@ defmodule Release do
   # notarized; the test then checks Gatekeeper accepts it.
   @sign_id "Developer ID Application: Ernest Lee (F48WQK5Y2R)"
   @viewers [
-    %{key: "skintokens", app: "skintokens-viewer", name: "SkinTokens Viewer",
+    %{key: "skintokens", app: "skintokens-viewer", name: "Model Explorer",
       repo: "chibifire/interactor-skintokens-viewer", space: "chibifire/skintokens-auto-rig", rig: true, mac_zip: true,
       web: false}
   ]
