@@ -45,6 +45,29 @@ static func _resolve_port() -> int:
 	return -1
 
 
+## Whether this build may run the MCP server at all. Always yes in the editor (so dev work and
+## `mcp_switch_check.tscn`/`mcp_check.py`, which run the editor binary, keep working unchanged),
+## and whenever `--mcp-port=` names a port on the command line (an explicit opt-in on any build).
+## Otherwise only the dedicated "mcp" package variant (tools/package_desktop.exs) can run it — it
+## writes an `mcp.enabled` file beside the weights (Contents/Resources on macOS, same place as
+## AutoRig.gd's weights_dir()); the ordinary shipped viewers (skintokens-viewer, walk-mode-viewer,
+## kimodo-motion-viewer) never get that file, so the server stays off and the slider
+## (McpSwitch.gd) hides itself entirely in those builds.
+static func build_enabled() -> bool:
+	if OS.has_feature("editor"):
+		return true
+	if _resolve_port() >= 0:
+		return true
+	return FileAccess.file_exists(_marker_path())
+
+
+static func _marker_path() -> String:
+	var base := OS.get_executable_path().get_base_dir()
+	if OS.get_name() == "macOS":
+		base = base.path_join("../Resources")
+	return base.path_join("mcp.enabled")
+
+
 var _cmds = MCPCommandsLib.new()
 var protocol = MCPProtocolLib.new()
 var _http = null
@@ -53,7 +76,7 @@ var _http = null
 func _ready() -> void:
 	protocol.commands = _cmds
 	_configure()
-	if OS.has_feature("web"):
+	if OS.has_feature("web") or not build_enabled():
 		return
 	_start_http()
 	set_process(true)
@@ -94,7 +117,7 @@ func url() -> String:
 ## Switch the server on or off while the game runs (the viewer's slider). Returns whether it listens
 ## afterwards: off on the web, and off when the port is taken.
 func set_listening(on: bool) -> bool:
-	if OS.has_feature("web"):
+	if OS.has_feature("web") or not build_enabled():
 		return false
 	if on:
 		if _http == null:
