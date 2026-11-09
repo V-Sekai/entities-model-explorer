@@ -1,6 +1,5 @@
 #!/usr/bin/env elixir
-# Build, test and stage the SkinTokens and walk-mode viewers (desktop packages and the walk-mode web
-# viewer) in one run.
+# Build, test and stage the Model Explorer viewer (desktop packages) in one run.
 #
 #   pixi run release                          from the smoke-water root (release.exs is linked
 #                                             there by the manifest); builds, tests and stages.
@@ -23,7 +22,7 @@
 # Wine on the Mac GPU (Vulkan through MoltenVK to Metal), the macOS image is built, signed (when the
 # release-signing keychain exists) and tested natively, the Linux tar is checked and reported
 # UNTESTED because no window can run in a container here. The Windows desk and WSL are blocklisted:
-# `--desk` refuses. A run STAGES the walk-mode viewer into ~/release-<id>/walk-mode (SHA256SUMS
+# `--desk` refuses. A run STAGES the Model Explorer viewer (SHA256SUMS
 # checked); nothing is uploaded unless `--publish dev|main` is given. Every input comes from a green
 # main CI run, a release, or a pinned checkout, and its source is written to <dir>/SOURCES.txt:
 #   engine     newest *-double.* release of V-Sekai-fire/service-godot-build (SHA256SUMS checked)
@@ -31,11 +30,11 @@
 #   guests     newest green guest run on main of interactor-skintokens-guest, -motion-guest,
 #              -motion-matching-guest (and its clip data at the same commit), interactor-headfit
 #   mujoco     project/plans/mujoco.double.elf at interactor-mujoco-sandbox-demo origin/main
-#   usd        usd.elf has no CI build: it is carried from the published walk-mode viewer's pck
+#   usd        usd.elf has no CI build: it is carried from the published Model Explorer viewer's pck
 # Gates, in order (the run stops at the first failure and says which):
 #   each ELF equals the hash written when it was fetched, and a planted corrupt ELF must fail that
 #   check; each ELF in the exported pck equals its input; the Windows zip (Wine), the macOS image and
-#   the Linux tar start and report their features; the walk viewer walks three-vrm-girl.vrm
+#   the Linux tar start and report their features; the viewer walks three-vrm-girl.vrm
 #   (VRM 0.x, six skins: MOVE-OK) on Windows (Wine) and macOS; the staged folder passes
 #   `shasum -c`, and a planted tampered copy must fail it.
 # Releases are tagged v<YYYYMMDD>-dev.N (RFD66606-2293), then -beta.N, -rc.N and the bare
@@ -54,12 +53,9 @@ defmodule Release do
   # notarized; the test then checks Gatekeeper accepts it.
   @sign_id "Developer ID Application: Ernest Lee (F48WQK5Y2R)"
   @viewers [
-    %{key: "skintokens", app: "skintokens-viewer", name: "SkinTokens Viewer",
+    %{key: "skintokens", app: "skintokens-viewer", name: "Model Explorer",
       repo: "chibifire/interactor-skintokens-viewer", space: "chibifire/skintokens-auto-rig", rig: true, mac_zip: true,
-      web: false},
-    %{key: "walk-mode", app: "walk-mode-viewer", name: "Walk Mode Viewer",
-      repo: "chibifire/interactor-walk-mode-viewer", space: "chibifire/walk-mode", rig: false, mac_zip: false,
-      web: true, web_space: "chibifire/walk-mode-web"}
+      web: false}
   ]
   @elfs ~w(skintokens.elf usd.elf motion.elf headfit.elf mm.elf mujoco.elf persona.elf)
   @weights ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)
@@ -249,25 +245,25 @@ defmodule Release do
     end
   end
 
-  # usd.elf has no CI build. Carry it from the published walk-mode viewer (its Windows zip is the
+  # usd.elf has no CI build. Carry it from the published Model Explorer viewer (its Windows zip is the
   # smallest package holding the pck), after checking that zip against the repo's SHA256SUMS.
   defp usd_from_published(ctx, d) do
-    repo = "chibifire/interactor-walk-mode-viewer"
-    zip = Path.join(d, "previous-walk-mode-windows.zip")
+    repo = "chibifire/interactor-skintokens-viewer"
+    zip = Path.join(d, "previous-skintokens-windows.zip")
 
     with {:ok, tok} <- hf_token(),
          {:ok, sums} <- hf_get(tok, repo, "SHA256SUMS", Path.join(d, "previous-SHA256SUMS")),
-         want when is_binary(want) <- sum_for(sums, "walk-mode-viewer-windows-x86_64.zip") || {:error, "#{repo} SHA256SUMS lacks the Windows zip"},
-         {:ok, _} <- hf_get(tok, repo, "walk-mode-viewer-windows-x86_64.zip", zip),
+         want when is_binary(want) <- sum_for(sums, "skintokens-viewer-windows-x86_64.zip") || {:error, "#{repo} SHA256SUMS lacks the Windows zip"},
+         {:ok, _} <- hf_get(tok, repo, "skintokens-viewer-windows-x86_64.zip", zip),
          {:ok, ^want} <- sha256(zip),
-         {:ok, [{_, pck}]} <- :zip.extract(String.to_charlist(zip), [{:file_list, [~c"walk-mode-viewer.pck"]}, :memory]),
+         {:ok, [{_, pck}]} <- :zip.extract(String.to_charlist(zip), [{:file_list, [~c"skintokens-viewer.pck"]}, :memory]),
          {:ok, files} <- pck_files(pck),
          usd when is_binary(usd) <- files["usd.elf"] || {:error, "the published pck has no usd.elf"},
          :ok <- File.write(Path.join(d, "usd.elf"), usd),
          :ok <- File.rm(zip) do
-      source(ctx, "usd.elf carried from #{repo} main walk-mode-viewer-windows-x86_64.zip #{String.slice(want, 0, 12)} (sha256 #{hex(:crypto.hash(:sha256, usd)) |> String.slice(0, 12)})")
+      source(ctx, "usd.elf carried from #{repo} main skintokens-viewer-windows-x86_64.zip #{String.slice(want, 0, 12)} (sha256 #{hex(:crypto.hash(:sha256, usd)) |> String.slice(0, 12)})")
     else
-      {:ok, other} when is_binary(other) -> {:error, "the published walk-mode zip does not match its SHA256SUMS (#{String.slice(other, 0, 12)})"}
+      {:ok, other} when is_binary(other) -> {:error, "the published skintokens-viewer zip does not match its SHA256SUMS (#{String.slice(other, 0, 12)})"}
       e -> e
     end
   end
@@ -430,7 +426,7 @@ defmodule Release do
     end)
   end
 
-  # One SHA256SUMS per viewer: the files that viewer publishes (walk-mode ships the dmg only).
+  # One SHA256SUMS per viewer: the files that viewer publishes.
   defp sums(o, v) do
     files = archives(v)
 
@@ -930,7 +926,7 @@ defmodule Release do
   # The web export is served from this Mac with the Space's headers (COOP/COEP/CORP) and timed in
   # Chrome here.
   defp load_web(ctx) do
-    what = "walk-mode web (Chrome, macOS)"
+    what = "web viewer (Chrome, macOS)"
     out = Path.join([ctx.dir, "web", "out"])
     tool = Path.join(ctx.dir, "model-explorer/tools/web_load_time.mjs")
 
