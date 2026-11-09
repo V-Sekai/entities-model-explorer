@@ -45,7 +45,7 @@ on:
         default: true
       engine_tag:
         description: "entities-zone release to take the double-precision engine from"
-        default: "v0.0.0-20261106225526-d632cdf2be4c"
+        default: "v0.0.0-20261108202140-679bf7601682"
 
 permissions:
   contents: write
