@@ -339,12 +339,16 @@ defmodule PackageDesktop do
   # mcp_runtime.gd's build_enabled()/_marker_path().
   @mcp_marker "mcp.enabled"
 
-  # So walk-mode-viewer and skintokens-viewer are tellable apart in the Finder/Dock/taskbar at a
-  # glance (iFire: "make sure walk and skintoken have different icons"), not just by their window
-  # title -- walk-mode gets a distinct hue-shifted icon (app_icon_walkmode.*), every other variant
-  # keeps the default app_icon.* (the blue cube).
+  # So walk-mode-viewer, skintokens-viewer-mcp and skintokens-viewer are tellable apart in the
+  # Finder/Dock/taskbar at a glance (iFire: "make sure walk and skintoken have different icons" /
+  # "add a new similar icon" for mcp), not just by their window title -- walk-mode gets a
+  # hue-shifted (blue -> yellow) icon, mcp a hue-shifted (blue -> magenta) one, both
+  # app_icon_<variant>.*, every other variant keeps the default app_icon.* (the blue cube).
   @icon_dir "vsk_model_explorer/resource/icon"
-  @icons %{"walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"}}
+  @icons %{
+    "walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"},
+    "mcp" => {"app_icon_mcp.icns", "app_icon_mcp.ico"}
+  }
   @default_icons {"app_icon.icns", "app_icon.ico"}
 
   defp package(out, w, variant) do
