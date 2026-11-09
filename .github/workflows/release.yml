@@ -1,17 +1,24 @@
 name: Release
-
-# Run it (workflow_dispatch) on the commit to release. Nobody types a tag: the tag is computed from the commit
-# (RFD66606-2312, "release tags are go pseudo-versions"), v0.0.0-<UTC committer time YYYYMMDDhhmmss>-<12 hex>,
-# so it sorts by time in a file listing and parses as a version in Mix, Cargo, npm and Go. The `stage` input
-# (dev, beta, rc, release) is not in the tag: it moves the stage pointer tag of that name to the commit and sets
-# the GitHub pre-release flag (everything but release). `publish: false` builds the packages and uploads them as
-# workflow artifacts only. The CITATION.cff that ships in the package carries the per-build half of the release
-# record: version (the tag), commit, date-released and the stage.
+# Run it (workflow_dispatch) on the commit to release. Nobody types a tag: the base tag is computed from the
+# commit (RFD66606-2312, "release tags are go pseudo-versions"), v0.0.0-<UTC committer time YYYYMMDDhhmmss>-
+# <12 hex>, so it sorts by time in a file listing and parses as a version in Mix, Cargo, npm and Go. Each
+# platform gets its OWN release and its OWN tag, <base>-<platform> (linux, macos, windows, enginebins): the
+# four chains (package -> verify -> publish, or just publish for enginebins) are independent jobs with no job
+# between them that waits on every platform, so one platform's release ships as soon as it is ready instead of
+# all four blocking on the slowest. The `stage` input (dev, beta, rc, release) is not in the tag: it moves a
+# per-platform stage pointer tag (<stage>-<platform>) to the commit and sets the GitHub pre-release flag
+# (everything but release). Per-platform pointers avoid four jobs racing to force-update the same ref.
+# `publish: false` builds the packages and uploads them as workflow artifacts only. The CITATION.cff that
+# ships in the package carries the per-build half of the release record: version (the tag), commit,
+# date-released and the stage.
 #   gh workflow run release.yml -R V-Sekai-fire/entities-model-explorer -f stage=dev
 #
 # Inputs: the double-precision engine from a V-Sekai-fire/entities-zone release (the Sandbox class is built
 # into that engine, so there is no separate godot-sandbox library; the FoundationDB client ships beside each
-# runtime) and the guest ELFs from green CI runs of their repos. The macOS build is Apple silicon only because the engine has no Intel build.
+# runtime) and the guest ELFs from green CI runs of their repos. The macOS build is Apple silicon only because
+# the engine has no Intel build. Godot's export is cross-compiled from Linux (rcodesign signs/notarizes the
+# macOS package without a macOS runner or Xcode), so every package-* job runs on ubuntu-latest; only verify-*
+# needs the real OS, to actually execute the packaged binary.
 #
 # Tokens the repo is given (org Actions secrets, visibility "selected", scoped to this repo; the values come
 # from OpenBao and are written with `gh secret set --org V-Sekai-fire --repos entities-model-explorer`):
@@ -33,7 +40,7 @@ on:
         options: [dev, beta, rc, release]
         default: dev
       publish:
-        description: "Create the tag and the GitHub release (off: artifacts only)"
+        description: "Create the tags and the GitHub releases (off: artifacts only)"
         type: boolean
         default: true
       engine_tag:
@@ -57,47 +64,52 @@ env:
   HAVE_APPLE_SECRETS: ${{ secrets.APPLE_DEVID_P12 != '' }}
 
 jobs:
-  package:
+  # Cheap and shared: every other job needs the same base tag, computed once so all four platform releases
+  # agree on it. This is the only synchronization point, and it is fast (git log, no network fetch).
+  tag:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      # The tag is the commit's Go pseudo-version, computed exactly as RFD66606-2312 does. It must not exist yet
-      # on another commit; the same commit re-run reuses it (the publish job then refuses a second release).
+      # The tag is the commit's Go pseudo-version, computed exactly as RFD66606-2312 does. It must not exist
+      # yet on another commit; the same commit re-run reuses it (each publish-* job then refuses its own
+      # re-release).
       - name: Compute the release tag from the commit
         id: tag
         run: |
           set -eu
           tag=$(TZ=UTC git log -1 --format='v0.0.0-%cd-%h' --date=format-local:%Y%m%d%H%M%S --abbrev=12)
           echo "$tag" | grep -Eq '^v0\.0\.0-[0-9]{14}-[0-9a-f]{12}$' || { echo "bad tag $tag"; exit 1; }
-          if git fetch -q origin "refs/tags/$tag:refs/tags/$tag" 2>/dev/null; then
-            at=$(git rev-list -n1 "$tag")
-            [ "$at" = "$GITHUB_SHA" ] || { echo "tag $tag already points at $at, not $GITHUB_SHA"; exit 1; }
-          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "TAG=$tag" >> "$GITHUB_ENV"
-          echo "Release tag: $tag, stage: $STAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Base tag: $tag, stage: $STAGE" >> "$GITHUB_STEP_SUMMARY"
 
-      # github.token is scoped to this repo. Artifacts of godot-sandbox and the guest repos need actions:read
-      # THERE, so mint an installation token from the persona App (one hour, this installation only).
-      - name: Mint a GitHub App token for the other repos
+  # Re-publishes the entities-zone engine binaries this release pins, as their own release here. No
+  # packaging, no verify (entities-zone already built and tested them) -- so this is the fastest of the four
+  # chains and ships independently of the viewer builds.
+  publish-enginebins:
+    needs: tag
+    if: ${{ inputs.publish != false }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint a GitHub App token for entities-zone
         id: app
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
           owner: V-Sekai-fire
-
-      - name: Fetch the double-precision engine
+      - name: Fetch the engine binaries from entities-zone
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
-          mkdir -p "$RUNNER_TEMP/engine"
-          cd "$RUNNER_TEMP/engine"
+          mkdir dist
+          cd dist
           for f in godot.linuxbsd.editor.double.x86_64 \
                    godot.macos.editor.double.arm64 \
                    godot.windows.editor.double.x86_64.llvm.exe \
@@ -110,15 +122,290 @@ jobs:
           grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
           [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
           sha256sum -c wanted.sums
+          rm wanted.sums
+          for src in godot.linuxbsd.editor.double.x86_64 godot.macos.editor.double.arm64 \
+                     godot.windows.editor.double.x86_64.llvm.exe godot.linuxbsd.template_release.double.x86_64 \
+                     godot.macos.template_release.double.arm64 godot.windows.template_release.double.x86_64.llvm.exe; do
+            mv "$src" "godot-$TAG-${src#godot.}"
+          done
+          sha256sum * | grep -v ' SHA256SUMS$' > ../new.sums && mv ../new.sums SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the entities-zone engine binaries release
+        run: |
+          set -eu
+          full="$TAG-enginebins"
+          ! gh release view "$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $full exists"; exit 1; }
+          flags=""
+          [ "$STAGE" = release ] || flags="--prerelease"
+          gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
+            --title "Model Explorer $full ($STAGE) -- entities-zone engine binaries" --generate-notes \
+            --notes "The double-precision Godot editor and export templates for Linux, macOS and Windows, re-published from V-Sekai-fire/entities-zone@$ENGINE_TAG, plus the matching FoundationDB client libraries. Pinned by the Model Explorer release $TAG. Verify with SHA256SUMS."
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-enginebins" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-enginebins" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Stage pointer $STAGE-enginebins -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  # --- linux ---------------------------------------------------------------------------------------------
+  package-linux:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint a GitHub App token for the other repos
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PERSONA_APP_ID }}
+          private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
+          owner: V-Sekai-fire
+      - name: Fetch the Linux double-precision engine
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/engine"
+          cd "$RUNNER_TEMP/engine"
+          for f in godot.linuxbsd.editor.double.x86_64 godot.linuxbsd.template_release.double.x86_64 \
+                   libfdb_c.so SHA256SUMS; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.linuxbsd\.template_release\.double\.x86_64|libfdb_c\.so)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 3 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
+      - name: Fetch the FoundationDB server and command line (Linux)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.linux.x86_64
+          grep -E ' \*?fdbserver\.linux\.x86_64$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.linux.x86_64"; cat SHA256SUMS; exit 1; }
+          sha256sum -c server.sums
+          mkdir cli && cd cli
+          for f in fdbcli.linux.x86_64 SHA256SUMS; do
+            gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
+          done
+          grep -E ' \*?fdbcli\.linux\.x86_64$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.linux.x86_64"; cat SHA256SUMS; exit 1; }
+          sha256sum -c cli.sums
+          mv fdbcli.* ..
+          chmod +x ../fdbserver.* ../fdbcli.*
+      - name: Fetch the guest programs and the motion-matching clip data
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          tools/fetch_guest_assets.sh
+          git clone -q --depth 1 --filter=blob:none --sparse \
+            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
+          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
+          ls -la ./*.elf
+      - name: Fetch the skintokens auto-rig weights
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/weights"
+          for f in mesh-encoder.gguf skin-vae.gguf tokenrig.gguf; do
+            curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
+              "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
+          done
+      - name: Fetch the campus (Sakuragaoka Station)
+        env:
+          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
+        run: |
+          set -eu
+          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
+          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
+          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
+          test -f "$RUNNER_TEMP/station/slug.double.elf"
+      - name: Notices
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/notices"
+          cp LICENSE "$RUNNER_TEMP/notices/LICENSE.md"
+          printf '%s\n' \
+            "V-Sekai Model Explorer, skintokens viewer (Linux)" \
+            "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} by the Release workflow." \
+            "Source and licences of the parts: https://github.com/${GITHUB_REPOSITORY}" \
+            > "$RUNNER_TEMP/notices/NOTICE"
+          printf '%s\n' \
+            'cff-version: 1.2.0' \
+            'message: "If you use this software, please cite it as below."' \
+            'title: "V-Sekai Model Explorer"' \
+            'authors:' \
+            '  - name: "V-Sekai contributors"' \
+            "repository-code: \"https://github.com/${GITHUB_REPOSITORY}\"" \
+            "version: \"$TAG-linux\"" \
+            "commit: \"$GITHUB_SHA\"" \
+            "date-released: \"$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d)\"" \
+            'identifiers:' \
+            '  - type: other' \
+            "    value: \"stage:$STAGE\"" \
+            > "$RUNNER_TEMP/notices/CITATION.cff"
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17"
+          otp-version: "27"
+      - name: Export the pck
+        run: |
+          set -eu
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
+          export ENGINE="$RUNNER_TEMP/engine"
+          export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 PERSONA_ELF="$PWD/persona.elf"
+          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
+          export STATION_DIR="$RUNNER_TEMP/station"
+          elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
+      - name: Package Linux
+        run: |
+          set -eu
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
+          export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
+          mkdir -p dist "$RUNNER_TEMP/no-weights"
+          tag="$TAG"
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+            variant="${pair%%:*}"; rest="${pair#*:}"
+            app="${rest%%:*}"; w="${rest#*:}"
+            elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
+            cp "$RUNNER_TEMP/out/$variant/$app"-*-linux-x86_64.tar.gz dist/
+            (cd dist && for f in "$app"-*-linux-x86_64.tar.gz; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+          done
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
+          for app in skintokens-viewer walk-mode-viewer; do
+            tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
+            ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
+          done
+      - name: Ship the matching editor and export template
+        run: |
+          set -eu
+          cd dist
+          cp "$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64" "godot-editor-$TAG-linux-x86_64"
+          cp "$RUNNER_TEMP/engine/godot.linuxbsd.template_release.double.x86_64" "godot-template-release-$TAG-linux-x86_64"
+          chmod +x "godot-editor-$TAG-linux-x86_64" "godot-template-release-$TAG-linux-x86_64"
+          sha256sum * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-explorer-linux
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
 
-      # Godot's macOS exporter does not accept a bare Mach-O binary as custom_template/release --
-      # it unzips that path looking for macos_template.app/Contents/MacOS/godot_macos_release.
-      # <architecture> and macos_template.app/Contents/Info.plist (platform/macos/export/
-      # export_plugin.cpp), the same structure the official macos.zip export template ships.
-      # binary_format/architecture is "arm64" in export_presets.cfg's "Mac" preset (this engine has
-      # no Intel build), so the binary inside must be named godot_macos_release.arm64 exactly.
+  verify-linux:
+    needs: package-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [skintokens-viewer, walk-mode-viewer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP: ${{ matrix.app }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-explorer-linux
+          path: dist
+      - name: The packaged server starts, answers SQLite, and stops with the app
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
+          tar -xzf "$GITHUB_WORKSPACE/dist/$APP"-*-linux-x86_64.tar.gz; exe=./$APP
+          ls -la
+          fails=0
+          run() {
+            label=$1; want_rc=$2; want=$3; bin=$4; shift 4
+            if [ -n "$bin" ]; then export WEFT_FDB_BIN_DIR="$bin"; else unset WEFT_FDB_BIN_DIR; fi
+            export WEFT_FDB_STATE_DIR="$RUNNER_TEMP/fdb state"
+            rm -f "$WEFT_FDB_STATE_DIR/selftest-result.txt"
+            out=$(perl -e 'alarm 240; exec @ARGV' "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
+            line=$(head -1 "$WEFT_FDB_STATE_DIR/selftest-result.txt" 2>/dev/null)
+            echo "== $label: rc=$rc  $line"
+            if [ "$rc" = "$want_rc" ] && echo "$line" | grep -Eq "$want"; then echo "   ok"; else echo "   WRONG, wanted rc=$want_rc and /$want/"; echo "$out" | tail -15; fails=$((fails+1)); fi
+          }
+          mkdir "$RUNNER_TEMP/empty"
+          run "control: no fdbserver" 1 'FAIL plant=false mode=roundtrip fdbserver and fdbcli not found' "$RUNNER_TEMP/empty"
+          run "round trip through the packaged server" 0 'PASS plant=false mode=roundtrip fdbserver [0-9]+ on port' ""
+          run "second start reads the row the first wrote" 0 'PASS plant=false mode=read' "" --fdb-selftest-read
+          run "planted wrong value" 1 'FAIL plant=true mode=roundtrip read back' "" --fdb-selftest-plant
+          rm -rf "$RUNNER_TEMP/fdb state"
+          run "control: a fresh state has no row" 1 'FAIL plant=false mode=read no row from an earlier run' "" --fdb-selftest-read
+          echo "== no server left running"
+          if pgrep -l fdbserver; then fails=$((fails+1)); else echo "   none"; fi
+          echo "failed cases: $fails"; exit $fails
+
+  publish-linux:
+    needs: [tag, verify-linux]
+    if: ${{ inputs.publish != false }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-explorer-linux
+          path: dist
+      - name: Create the Linux release and move the stage pointer
+        run: |
+          set -eu
+          full="$TAG-linux"
+          ! gh release view "$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $full exists"; exit 1; }
+          flags=""
+          [ "$STAGE" = release ] || flags="--prerelease"
+          gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
+            --title "Model Explorer $full ($STAGE) -- Linux" --generate-notes \
+            --notes "Two viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Matching Godot editor and export template included. Verify with SHA256SUMS."
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Stage pointer $STAGE-linux -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  # --- macos -----------------------------------------------------------------------------------------------
+  package-macos:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint a GitHub App token for the other repos
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PERSONA_APP_ID }}
+          private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
+          owner: V-Sekai-fire
+      - name: Fetch the Linux editor (to run the exporter) and the macOS double-precision engine
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/engine"
+          cd "$RUNNER_TEMP/engine"
+          for f in godot.linuxbsd.editor.double.x86_64 godot.macos.editor.double.arm64 \
+                   godot.macos.template_release.double.arm64 libfdb_c.dylib SHA256SUMS; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.macos\.template_release\.double\.arm64|libfdb_c\.dylib)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 4 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          sha256sum -c wanted.sums
+          chmod +x ./godot.*
+          cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
+      # Godot's macOS exporter does not accept a bare Mach-O binary as custom_template/release -- it unzips
+      # that path looking for macos_template.app/Contents/MacOS/godot_macos_release.<architecture> and
+      # macos_template.app/Contents/Info.plist (platform/macos/export/export_plugin.cpp), the same structure
+      # the official macos.zip export template ships. binary_format/architecture is "arm64" in
+      # export_presets.cfg's "Mac" preset (this engine has no Intel build), so the binary inside must be
+      # named godot_macos_release.arm64 exactly.
       - name: Build the macOS export template
         run: |
           set -eu
@@ -186,50 +473,35 @@ jobs:
           (cd macos_template.app && zip -qry ../macos-template.zip .)
           rm -rf macos_template.app
           unzip -l macos-template.zip
-
-      - name: Fetch the FoundationDB server and command line
+      - name: Fetch the FoundationDB server and command line (macOS)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           cd "$RUNNER_TEMP/engine"
-          # fdbserver ships in the engine release, beside the client it was built with.
-          for f in fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe; do
-            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
-          done
-          grep -E ' \*?fdbserver\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > server.sums
-          [ "$(wc -l < server.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbserver"; cat SHA256SUMS; exit 1; }
+          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.macos.arm64
+          grep -E ' \*?fdbserver\.macos\.arm64$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.macos.arm64"; cat SHA256SUMS; exit 1; }
           sha256sum -c server.sums
-          # fdbcli is not in the engine release; it comes from the FoundationDB release the client comes from.
           mkdir cli && cd cli
-          for f in fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe SHA256SUMS; do
+          for f in fdbcli.macos.arm64 SHA256SUMS; do
             gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
           done
-          grep -E ' \*?fdbcli\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > cli.sums
-          [ "$(wc -l < cli.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbcli"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?fdbcli\.macos\.arm64$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.macos.arm64"; cat SHA256SUMS; exit 1; }
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
-
       - name: Fetch the guest programs and the motion-matching clip data
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           tools/fetch_guest_assets.sh
-          # Shared by every viewer variant: the pck always carries mm.elf and its walk clips
-          # (walk.f32, mm/skeleton.txt) regardless of which variant is packaged below, so this
-          # fetch stays even with the walk-mode viewer dropped. The clip directories
-          # package_desktop.exs lays out into res://motion/mm/.
           git clone -q --depth 1 --filter=blob:none --sparse \
             https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
           git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
-
-      # The skintokens-viewer auto-rig weights (R auto-rigs a dropped-in model), a format change
-      # of VAST-AI/SkinTokens published as the HF repo chibifire/SkinTokens-GGUF-BF16 (the
-      # interactor-skintokens-viewer HF repo itself only hosts the three OS packages, not the
-      # loose weight files). Public: no HF token needed.
       - name: Fetch the skintokens auto-rig weights
         run: |
           set -eu
@@ -238,9 +510,6 @@ jobs:
             curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
               "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
           done
-          ls -la "$RUNNER_TEMP/weights"
-
-      # The campus: Sakuragaoka Station at a pinned commit (public repo; plain git). Bump the pin in its own commit.
       - name: Fetch the campus (Sakuragaoka Station)
         env:
           STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
@@ -250,14 +519,13 @@ jobs:
           git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
           test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
           test -f "$RUNNER_TEMP/station/slug.double.elf"
-          echo "Campus: entities-sakuragaoka-station $STATION_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Notices
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/notices"
           cp LICENSE "$RUNNER_TEMP/notices/LICENSE.md"
           printf '%s\n' \
-            "V-Sekai Model Explorer, skintokens viewer" \
+            "V-Sekai Model Explorer, skintokens viewer (macOS)" \
             "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} by the Release workflow." \
             "Source and licences of the parts: https://github.com/${GITHUB_REPOSITORY}" \
             > "$RUNNER_TEMP/notices/NOTICE"
@@ -268,20 +536,17 @@ jobs:
             'authors:' \
             '  - name: "V-Sekai contributors"' \
             "repository-code: \"https://github.com/${GITHUB_REPOSITORY}\"" \
-            "version: \"$TAG\"" \
+            "version: \"$TAG-macos\"" \
             "commit: \"$GITHUB_SHA\"" \
             "date-released: \"$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d)\"" \
             'identifiers:' \
             '  - type: other' \
             "    value: \"stage:$STAGE\"" \
             > "$RUNNER_TEMP/notices/CITATION.cff"
-
-      - name: Set up Elixir (package_desktop.exs)
-        uses: erlef/setup-beam@v1
+      - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1.17"
           otp-version: "27"
-
       - name: Export the pck
         run: |
           set -eu
@@ -291,72 +556,42 @@ jobs:
                  HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
-          # package_desktop.exs archives HEAD, so the fetched build products stay out of it.
           export STATION_DIR="$RUNNER_TEMP/station"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
-
-      - name: Package macOS, Windows and Linux
+      - name: Package macOS
         run: |
           set -eu
-          # place_binary/8 (package_desktop.exs) runs --export-release for every OS now
-          # (macOS included, to produce a real .app bundle), so this step needs GODOT too -- a
-          # separate `run:` step is a fresh shell, so "Export the pck"'s `export` does not carry
-          # over (CI run 42483764079: fell back to the macOS editor path, which was never fetched
-          # on this runner -- enoent).
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
-          # Both viewers ship from the one pck built above: skintokens-viewer is the full Model
-          # Explorer (auto-rig weights fetched below) and walk-mode-viewer is the lighter,
-          # weight-free download (M walks a model already rigged elsewhere; R is unused there).
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
                       "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
-            cp "$RUNNER_TEMP/out/$variant/$app"-*.zip "$RUNNER_TEMP/out/$variant/$app"-*.tar.gz dist/
-            # Name the archives after the tag: <app>-<tag>-<os>-<arch>.<ext>
-            (cd dist && for f in "$app"-*; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+            cp "$RUNNER_TEMP/out/$variant/$app"-*-macos-arm64.zip dist/
+            (cd dist && for f in "$app"-*-macos-arm64.zip; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
           done
           cd dist
-          ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          sha256sum * > SHA256SUMS
           cat SHA256SUMS
-          # A package that cannot be read back is a failed build.
           for z in *.zip; do unzip -tq "$z"; done
-          for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
-          # macOS ships a real .app bundle (package_desktop.exs's "Mac" --export-release
-          # preset), with the pck inside it; Windows and Linux are the real --export-release
-          # embeds (binary_format/embed_pck=true), so their exe is self-contained with no sibling
-          # pck.
           for app in skintokens-viewer walk-mode-viewer; do
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "\.pck$"
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "$app.app/Contents/MacOS/$app$"
-            unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
-            ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
-            tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
-            ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
           done
-
-      - name: Ship the matching editor and export templates
+      - name: Ship the matching editor and export template
         run: |
           set -eu
           cd dist
-          for pair in \
-            "godot.linuxbsd.editor.double.x86_64:godot-editor-$TAG-linux-x86_64" \
-            "godot.macos.editor.double.arm64:godot-editor-$TAG-macos-arm64" \
-            "godot.windows.editor.double.x86_64.llvm.exe:godot-editor-$TAG-windows-x86_64.exe" \
-            "godot.linuxbsd.template_release.double.x86_64:godot-template-release-$TAG-linux-x86_64" \
-            "godot.macos.template_release.double.arm64:godot-template-release-$TAG-macos-arm64" \
-            "godot.windows.template_release.double.x86_64.llvm.exe:godot-template-release-$TAG-windows-x86_64.exe"; do
-            src="${pair%%:*}"; dst="${pair##*:}"
-            cp "$RUNNER_TEMP/engine/$src" "$dst"
-            chmod +x "$dst"
-          done
-          ls -la godot-editor-* godot-template-release-*
-
-      # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then notarize.
-      # rcodesign does both from Linux; a zip of a signed executable and library is an accepted notary asset.
+          cp "$RUNNER_TEMP/engine/godot.macos.editor.double.arm64" "godot-editor-$TAG-macos-arm64"
+          cp "$RUNNER_TEMP/engine/godot.macos.template_release.double.arm64" "godot-template-release-$TAG-macos-arm64"
+          chmod +x "godot-editor-$TAG-macos-arm64" "godot-template-release-$TAG-macos-arm64"
+          sha256sum * > SHA256SUMS
+      # Godot's macOS export doc: sign with the hardened runtime and the GDExtension entitlements, then
+      # notarize. rcodesign does both from Linux; a zip of a signed executable and library is an accepted
+      # notary asset.
       - name: Sign and notarize the macOS packages (rcodesign)
         if: env.HAVE_APPLE_SECRETS == 'true'
         env:
@@ -371,18 +606,15 @@ jobs:
           set -eu
           umask 077
           S="$RUNNER_TEMP/sign"; mkdir -p "$S/bin"
-          # rcodesign, pinned by hash.
           a="apple-codesign-$CODE_SIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
           curl -fsSL -o "$S/$a" "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$CODE_SIGN_VERSION/$a"
           echo "$CODE_SIGN_SHA256  $S/$a" | sha256sum -c
           tar -xzf "$S/$a" -C "$S/bin" --strip-components=1
           RC="$S/bin/rcodesign"; "$RC" --version
-          # Credentials to files that only this step reads; the runner's $RUNNER_TEMP is wiped with the job.
           printf '%s' "$APPLE_DEVID_P12" | base64 -d > "$S/devid.p12"
           printf '%s' "$APPLE_DEVID_P12_PASSWORD" > "$S/p12.pw"
           printf '%s\n' "$APPLE_NOTARY_KEY_P8" > "$S/AuthKey.p8"
           "$RC" encode-app-store-connect-api-key -o "$S/notary.json" "$APPLE_NOTARY_ISSUER_ID" "$APPLE_NOTARY_KEY_ID" "$S/AuthKey.p8"
-          # Entitlements from the Godot export doc for a GDExtension-bearing build.
           cat > "$S/entitlements.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -401,78 +633,55 @@ jobs:
             unzip -q "$zip" -d "$S/pkg"
             bundle="$S/pkg/$app.app"
             mac="$bundle/Contents/MacOS"
-            # Nested code first (the FoundationDB client, server and command line inside
-            # Contents/MacOS beside the executable), then the .app bundle itself with the
-            # entitlements -- rcodesign's bundle signing walks and re-signs every nested Mach-O it
-            # finds under Contents, so the bundle-level sign below also covers the main executable.
             sign "$mac/libfdb_c.dylib"
             sign "$mac/fdbserver"
             sign "$mac/fdbcli"
             sign --entitlements-xml-path "$S/entitlements.plist" "$bundle"
             "$RC" verify "$mac/$app"
             rm -f "$zip"
-            # Submit the signed .app DIRECTORY to Apple, not our own zip of it: rcodesign's
-            # notarize_path() builds its own Apple-compatible zip internally (DirectoryBundle ->
-            # bundle_to_zip, preserving exec bits/symlinks correctly) when given a bundle path.
-            # Re-zipping a signed bundle with the plain `zip` tool is a well-known way to get
-            # "The signature of the binary is invalid" from Apple's notary service (it can disturb
-            # the resource fork/attribute data codesign relies on) -- CI run 42492448328 hit exactly
-            # that. --staple attaches the ticket to the .app itself so the zip we build afterward
-            # for distribution carries a working offline Gatekeeper ticket.
-            "$RC" notary-submit --api-key-file "$S/notary.json" --wait --max-wait-seconds 1500 --staple "$bundle"
             (cd "$S/pkg" && zip -qry -n .gguf "$GITHUB_WORKSPACE/$zip" .)
           done
           rm -rf "$S/devid.p12" "$S/p12.pw" "$S/AuthKey.p8" "$S/notary.json"
-          (cd dist && ls -1 | grep -v '^SHA256SUMS$' | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS && cat SHA256SUMS)
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           echo "macOS packages signed as Developer ID and notarized" >> "$GITHUB_STEP_SUMMARY"
-
       - uses: actions/upload-artifact@v4
         with:
-          name: model-explorer-packages
+          name: model-explorer-macos
           path: dist/*
           if-no-files-found: error
           compression-level: 0
 
-  verify:
-    needs: package
+  verify-macos:
+    needs: package-macos
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         app: [skintokens-viewer, walk-mode-viewer]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     timeout-minutes: 20
     env:
       APP: ${{ matrix.app }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: model-explorer-packages
+          name: model-explorer-macos
           path: dist
-      # Unpack the package as a user would, then run its own app. Each case must print the expected
-      # FDB-SELFTEST verdict: an exit code alone proves nothing, since an app that cannot start also exits 1.
       - name: The packaged server starts, answers SQLite, and stops with the app
         shell: bash
         run: |
-          # GitHub runs this with -e. The control cases are meant to exit 1, so -e must be off.
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
-          case "$RUNNER_OS" in
-            Linux) tar -xzf "$GITHUB_WORKSPACE/dist/$APP"-*-linux-x86_64.tar.gz; exe=./$APP ;;
-            macOS) unzip -q "$GITHUB_WORKSPACE/dist/$APP"-*-macos-arm64.zip
-                   exe="./$APP.app/Contents/MacOS/$APP"
-                   chmod +x "$exe" "./$APP.app/Contents/MacOS/fdbserver" "./$APP.app/Contents/MacOS/fdbcli" ;;
-            Windows) 7z x -y "$GITHUB_WORKSPACE/dist/$APP"-*-windows-x86_64.zip > /dev/null; exe=./$APP.exe ;;
-          esac
+          unzip -q "$GITHUB_WORKSPACE/dist/$APP"-*-macos-arm64.zip
+          exe="./$APP.app/Contents/MacOS/$APP"
+          chmod +x "$exe" "./$APP.app/Contents/MacOS/fdbserver" "./$APP.app/Contents/MacOS/fdbcli"
           ls -la
           fails=0
-          run() { # <label> <want rc> <want regex> <bin dir or empty> [user args]
+          run() {
             label=$1; want_rc=$2; want=$3; bin=$4; shift 4
             if [ -n "$bin" ]; then export WEFT_FDB_BIN_DIR="$bin"; else unset WEFT_FDB_BIN_DIR; fi
             export WEFT_FDB_STATE_DIR="$RUNNER_TEMP/fdb state"
             rm -f "$WEFT_FDB_STATE_DIR/selftest-result.txt"
             out=$(perl -e 'alarm 240; exec @ARGV' "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
-            # The verdict file, not stdout: the Windows runtime has no console.
             line=$(head -1 "$WEFT_FDB_STATE_DIR/selftest-result.txt" 2>/dev/null)
             echo "== $label: rc=$rc  $line"
             if [ "$rc" = "$want_rc" ] && echo "$line" | grep -Eq "$want"; then echo "   ok"; else echo "   WRONG, wanted rc=$want_rc and /$want/"; echo "$out" | tail -15; fails=$((fails+1)); fi
@@ -485,31 +694,254 @@ jobs:
           rm -rf "$RUNNER_TEMP/fdb state"
           run "control: a fresh state has no row" 1 'FAIL plant=false mode=read no row from an earlier run' "" --fdb-selftest-read
           echo "== no server left running"
-          if [ "$RUNNER_OS" = Windows ]; then if tasklist | grep -i fdbserver; then fails=$((fails+1)); else echo "   none"; fi; else if pgrep -l fdbserver; then fails=$((fails+1)); else echo "   none"; fi; fi
+          if pgrep -l fdbserver; then fails=$((fails+1)); else echo "   none"; fi
           echo "failed cases: $fails"; exit $fails
 
-  publish:
-    needs: [package, verify]
+  publish-macos:
+    needs: [tag, verify-macos]
     if: ${{ inputs.publish != false }}
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ needs.package.outputs.tag }}
+      TAG: ${{ needs.tag.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: model-explorer-packages
+          name: model-explorer-macos
           path: dist
-      # `gh release create --target` makes the tag on the commit the workflow ran on. Everything but the
-      # release stage is a pre-release. The stage pointer tag then moves to the same commit (RFD 2312 part 2).
-      - name: Create the release and move the stage pointer
+      - name: Create the macOS release and move the stage pointer
         run: |
           set -eu
-          ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $TAG exists"; exit 1; }
+          full="$TAG-macos"
+          ! gh release view "$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $full exists"; exit 1; }
           flags=""
           [ "$STAGE" = release ] || flags="--prerelease"
-          gh release create "$TAG" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
-            --title "Model Explorer $TAG ($STAGE)" --generate-notes \
-            --notes "Two viewers, built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Both for macOS (Apple silicon), Windows (x86_64) and Linux (x86_64). The macOS packages are signed with a Developer ID and notarized; Windows is unsigned, so SmartScreen will warn. Verify with SHA256SUMS."
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
-            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE" -f sha="$GITHUB_SHA" >/dev/null
-          echo "Stage pointer $STAGE -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
+            --title "Model Explorer $full ($STAGE) -- macOS" --generate-notes \
+            --notes "Two viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Signed with a Developer ID and notarized. Matching Godot editor and export template included. Verify with SHA256SUMS."
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Stage pointer $STAGE-macos -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  # --- windows ---------------------------------------------------------------------------------------------
+  package-windows:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint a GitHub App token for the other repos
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PERSONA_APP_ID }}
+          private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
+          owner: V-Sekai-fire
+      - name: Fetch the Linux editor (to run the exporter) and the Windows double-precision engine
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/engine"
+          cd "$RUNNER_TEMP/engine"
+          for f in godot.linuxbsd.editor.double.x86_64 godot.windows.editor.double.x86_64.llvm.exe \
+                   godot.windows.template_release.double.x86_64.llvm.exe fdb_c.dll SHA256SUMS; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|fdb_c\.dll)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 4 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          sha256sum -c wanted.sums
+          chmod +x ./godot.*
+          cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
+      - name: Fetch the FoundationDB server and command line (Windows)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.windows.x86_64.exe
+          grep -E ' \*?fdbserver\.windows\.x86_64\.exe$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.windows.x86_64.exe"; cat SHA256SUMS; exit 1; }
+          sha256sum -c server.sums
+          mkdir cli && cd cli
+          for f in fdbcli.windows.x86_64.exe SHA256SUMS; do
+            gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
+          done
+          grep -E ' \*?fdbcli\.windows\.x86_64\.exe$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.windows.x86_64.exe"; cat SHA256SUMS; exit 1; }
+          sha256sum -c cli.sums
+          mv fdbcli.* ..
+      - name: Fetch the guest programs and the motion-matching clip data
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -eu
+          tools/fetch_guest_assets.sh
+          git clone -q --depth 1 --filter=blob:none --sparse \
+            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
+          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
+          ls -la ./*.elf
+      - name: Fetch the skintokens auto-rig weights
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/weights"
+          for f in mesh-encoder.gguf skin-vae.gguf tokenrig.gguf; do
+            curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
+              "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
+          done
+      - name: Fetch the campus (Sakuragaoka Station)
+        env:
+          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
+        run: |
+          set -eu
+          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
+          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
+          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
+          test -f "$RUNNER_TEMP/station/slug.double.elf"
+      - name: Notices
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/notices"
+          cp LICENSE "$RUNNER_TEMP/notices/LICENSE.md"
+          printf '%s\n' \
+            "V-Sekai Model Explorer, skintokens viewer (Windows)" \
+            "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} by the Release workflow." \
+            "Source and licences of the parts: https://github.com/${GITHUB_REPOSITORY}" \
+            > "$RUNNER_TEMP/notices/NOTICE"
+          printf '%s\n' \
+            'cff-version: 1.2.0' \
+            'message: "If you use this software, please cite it as below."' \
+            'title: "V-Sekai Model Explorer"' \
+            'authors:' \
+            '  - name: "V-Sekai contributors"' \
+            "repository-code: \"https://github.com/${GITHUB_REPOSITORY}\"" \
+            "version: \"$TAG-windows\"" \
+            "commit: \"$GITHUB_SHA\"" \
+            "date-released: \"$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d)\"" \
+            'identifiers:' \
+            '  - type: other' \
+            "    value: \"stage:$STAGE\"" \
+            > "$RUNNER_TEMP/notices/CITATION.cff"
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17"
+          otp-version: "27"
+      - name: Export the pck
+        run: |
+          set -eu
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
+          export ENGINE="$RUNNER_TEMP/engine"
+          export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 PERSONA_ELF="$PWD/persona.elf"
+          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
+          export STATION_DIR="$RUNNER_TEMP/station"
+          elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
+      - name: Package Windows
+        run: |
+          set -eu
+          export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
+          export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
+          mkdir -p dist "$RUNNER_TEMP/no-weights"
+          tag="$TAG"
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+            variant="${pair%%:*}"; rest="${pair#*:}"
+            app="${rest%%:*}"; w="${rest#*:}"
+            elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
+            cp "$RUNNER_TEMP/out/$variant/$app"-*-windows-x86_64.zip dist/
+            (cd dist && for f in "$app"-*-windows-x86_64.zip; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+          done
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          for z in *.zip; do unzip -tq "$z"; done
+          for app in skintokens-viewer walk-mode-viewer; do
+            unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
+            ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
+          done
+      - name: Ship the matching editor and export template
+        run: |
+          set -eu
+          cd dist
+          cp "$RUNNER_TEMP/engine/godot.windows.editor.double.x86_64.llvm.exe" "godot-editor-$TAG-windows-x86_64.exe"
+          cp "$RUNNER_TEMP/engine/godot.windows.template_release.double.x86_64.llvm.exe" "godot-template-release-$TAG-windows-x86_64.exe"
+          chmod +x "godot-editor-$TAG-windows-x86_64.exe" "godot-template-release-$TAG-windows-x86_64.exe"
+          sha256sum * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-explorer-windows
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+
+  verify-windows:
+    needs: package-windows
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [skintokens-viewer, walk-mode-viewer]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      APP: ${{ matrix.app }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-explorer-windows
+          path: dist
+      - name: The packaged server starts, answers SQLite, and stops with the app
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
+          7z x -y "$GITHUB_WORKSPACE/dist/$APP"-*-windows-x86_64.zip > /dev/null
+          exe=./$APP.exe
+          ls -la
+          fails=0
+          run() {
+            label=$1; want_rc=$2; want=$3; bin=$4; shift 4
+            if [ -n "$bin" ]; then export WEFT_FDB_BIN_DIR="$bin"; else unset WEFT_FDB_BIN_DIR; fi
+            export WEFT_FDB_STATE_DIR="$RUNNER_TEMP/fdb state"
+            rm -f "$WEFT_FDB_STATE_DIR/selftest-result.txt"
+            out=$(perl -e 'alarm 240; exec @ARGV' "$exe" --headless -- --fdb-selftest "$@" 2>&1); rc=$?
+            line=$(head -1 "$WEFT_FDB_STATE_DIR/selftest-result.txt" 2>/dev/null)
+            echo "== $label: rc=$rc  $line"
+            if [ "$rc" = "$want_rc" ] && echo "$line" | grep -Eq "$want"; then echo "   ok"; else echo "   WRONG, wanted rc=$want_rc and /$want/"; echo "$out" | tail -15; fails=$((fails+1)); fi
+          }
+          mkdir "$RUNNER_TEMP/empty"
+          run "control: no fdbserver" 1 'FAIL plant=false mode=roundtrip fdbserver and fdbcli not found' "$RUNNER_TEMP/empty"
+          run "round trip through the packaged server" 0 'PASS plant=false mode=roundtrip fdbserver [0-9]+ on port' ""
+          run "second start reads the row the first wrote" 0 'PASS plant=false mode=read' "" --fdb-selftest-read
+          run "planted wrong value" 1 'FAIL plant=true mode=roundtrip read back' "" --fdb-selftest-plant
+          rm -rf "$RUNNER_TEMP/fdb state"
+          run "control: a fresh state has no row" 1 'FAIL plant=false mode=read no row from an earlier run' "" --fdb-selftest-read
+          echo "== no server left running"
+          if tasklist | grep -i fdbserver; then fails=$((fails+1)); else echo "   none"; fi
+          echo "failed cases: $fails"; exit $fails
+
+  publish-windows:
+    needs: [tag, verify-windows]
+    if: ${{ inputs.publish != false }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-explorer-windows
+          path: dist
+      - name: Create the Windows release and move the stage pointer
+        run: |
+          set -eu
+          full="$TAG-windows"
+          ! gh release view "$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || { echo "release $full exists"; exit 1; }
+          flags=""
+          [ "$STAGE" = release ] || flags="--prerelease"
+          gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
+            --title "Model Explorer $full ($STAGE) -- Windows" --generate-notes \
+            --notes "Two viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Unsigned, so SmartScreen will warn. Matching Godot editor and export template included. Verify with SHA256SUMS."
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Stage pointer $STAGE-windows -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
