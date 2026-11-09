@@ -1,0 +1,1325 @@
+# This file is part of Unidot Importer. See LICENSE.txt for full MIT license.
+# Copyright (c) 2021-present Lyuma <xn.lyuma@gmail.com> and contributors
+# SPDX-License-Identifier: MIT
+# SkinTokens' asset package export (AutoRig.gd runs it for every saved .vrm). This file is the one
+# copy: it came from the chibifire-stages/unidot_importer fork, whose export_avatar.gd consumes it as
+# a git subtree of this folder alone (branch split/asset-package-export, `git subtree split --prefix=
+# vsk_model_explorer/asset_package`), so keep this folder to this file.
+# A VRM 1.0 (T-posed, glTF space) becomes text YAML source assets in a
+# asset package, so the target project needs nothing but the avatar descriptor's SDK:
+#   <Name>.prefab        GameObjects, Transforms, a SkinnedMeshRenderer, an Animator and a
+#                        avatar descriptor (text YAML)
+#   <Name>.mesh.asset    one Mesh: every skinned primitive merged, one submesh per material
+#   <Name>.avatar.asset  the humanoid Avatar, computed by the rules below
+#   Materials/*.mat      lilToon materials from the glTF base colour and the MToon shading
+#   Assets/lilToon/      lilToon itself (MIT), when the caller passes the vendored members
+# The reverse of Unidot's readers: UnidotMesh (m_VertexData, m_IndexBuffer), UnidotAvatar
+# (m_HumanDescription), UnidotModelImporter (humanDescription), human_trait.gd (masses, names).
+# Compiled by godot-sandbox's GDScript compiler into a RISC-V guest; it reads and writes no files.
+#   view_position(vrm) -> Vector3
+#       The eye point of a VRM, in source-asset space, for the avatar descriptor's view position.
+extends RefCounted
+
+const GLB_MAGIC := 0x46546C67
+const CHUNK_JSON := 0x4E4F534A
+const CHUNK_BIN := 0x004E4942
+# The format's own YAML tag: importers need it as written.
+const HEADER := "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n"
+const DESCRIPTOR_SCRIPT := "{fileID: 542108242, guid: 67cc4cb7839cd3741b63733d5adf0442, type: 3}"
+
+# Humanoid body bones, in the order of m_HumanBoneIndex and m_HumanBoneMass.
+const HUMAN_BONES := ["Hips", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg", "LeftFoot",
+	"RightFoot", "Spine", "Chest", "UpperChest", "Neck", "Head", "LeftShoulder", "RightShoulder",
+	"LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftHand", "RightHand", "LeftToes",
+	"RightToes", "LeftEye", "RightEye", "Jaw"]
+# human_trait.gd human_bone_mass (humanoid masses, same order).
+const MASS := [0.14545456, 0.12121213, 0.12121213, 0.048484854, 0.048484854, 0.009696971, 0.009696971,
+	0.030303033, 0.14545456, 0.14545456, 0.012121214, 0.048484854, 0.006060607, 0.006060607, 0.024242427,
+	0.024242427, 0.01818182, 0.01818182, 0.006060607, 0.006060607, 0.0024242427, 0.0024242427, 0.0, 0.0, 0.0]
+# VRM 1.0 humanBones name -> HumanBodyBones name.
+const FROM_VRM := {"hips": "Hips", "spine": "Spine", "chest": "Chest", "upperChest": "UpperChest",
+	"neck": "Neck", "head": "Head", "leftShoulder": "LeftShoulder", "leftUpperArm": "LeftUpperArm",
+	"leftLowerArm": "LeftLowerArm", "leftHand": "LeftHand", "rightShoulder": "RightShoulder",
+	"rightUpperArm": "RightUpperArm", "rightLowerArm": "RightLowerArm", "rightHand": "RightHand",
+	"leftUpperLeg": "LeftUpperLeg", "leftLowerLeg": "LeftLowerLeg", "leftFoot": "LeftFoot",
+	"leftToes": "LeftToes", "rightUpperLeg": "RightUpperLeg", "rightLowerLeg": "RightLowerLeg",
+	"rightFoot": "RightFoot", "rightToes": "RightToes", "leftEye": "LeftEye", "rightEye": "RightEye",
+	"jaw": "Jaw"}
+# Finger bones, in m_HandBoneIndex order (thumb, index, middle, ring, little; base to tip). These
+# are the editor's human names; VRM's thumb metacarpal is the editor's thumb proximal.
+const FINGERS := ["Thumb", "Index", "Middle", "Ring", "Little"]
+const PHALANGES := ["Proximal", "Intermediate", "Distal"]
+
+
+func finger_name(side: String, finger: int, k: int) -> String:
+	return "%s %s %s" % [side, FINGERS[finger], PHALANGES[k]]
+
+
+func finger_from_vrm() -> Dictionary:
+	var out := {}
+	for side in ["Left", "Right"]:
+		var low: String = side.to_lower()
+		for f in FINGERS.size():
+			var vrm_parts: Array = ["Metacarpal", "Proximal", "Distal"] if f == 0 else PHALANGES
+			for k in 3:
+				out[low + FINGERS[f] + vrm_parts[k]] = finger_name(side, f, k)
+	return out
+
+
+# The bone whose direction a bone's axes follow, first one present wins.
+const CHILDREN := {"Hips": ["Spine"], "Spine": ["Chest", "UpperChest", "Neck"], "Chest": ["UpperChest", "Neck"],
+	"UpperChest": ["Neck"], "Neck": ["Head"], "LeftShoulder": ["LeftUpperArm"],
+	"LeftUpperArm": ["LeftLowerArm"], "LeftLowerArm": ["LeftHand"], "RightShoulder": ["RightUpperArm"],
+	"RightUpperArm": ["RightLowerArm"], "RightLowerArm": ["RightHand"], "LeftUpperLeg": ["LeftLowerLeg"],
+	"LeftLowerLeg": ["LeftFoot"], "RightUpperLeg": ["RightLowerLeg"], "RightLowerLeg": ["RightFoot"]}
+
+# Human parent of every body bone, for bones the avatar lacks.
+const PARENT_OF := {"LeftUpperLeg": "Hips", "RightUpperLeg": "Hips", "LeftLowerLeg": "LeftUpperLeg",
+	"RightLowerLeg": "RightUpperLeg", "LeftFoot": "LeftLowerLeg", "RightFoot": "RightLowerLeg",
+	"LeftToes": "LeftFoot", "RightToes": "RightFoot", "Spine": "Hips", "Chest": "Spine",
+	"UpperChest": "Chest", "Neck": "UpperChest", "Head": "Neck", "LeftShoulder": "UpperChest",
+	"RightShoulder": "UpperChest", "LeftUpperArm": "LeftShoulder", "RightUpperArm": "RightShoulder",
+	"LeftLowerArm": "LeftUpperArm", "RightLowerArm": "RightUpperArm", "LeftHand": "LeftLowerArm",
+	"RightHand": "RightLowerArm"}
+
+var last_error := ""
+
+
+# Per bone: axes template (x, kept z) in source-asset space at T-pose, Sgn, limit min, limit max (radians),
+# and the rotation from the T-pose frame to the zero-muscle frame. Measured from the Avatar the editor
+# builds for a T-posed VRM, through its public API and the text assets it writes:
+#   frame: x along the bone toward the next humanoid bone (end bones keep the template), keeps the
+#     template z, y = z x x.  PostQ = R_bone^-1 F.  PreQ = R_parent^-1 F Qoff (Qoff below, per bone).
+#   length: distance to the child; head = neck length; hand, toes = 1/4 of the parent distance;
+#     foot = height above the ground.
+# These agree with the editor's own Avatar to 1.2e-6, and its rest muscles to 7e-7.
+func axes_table() -> Dictionary:
+	var X := Vector3(1, 0, 0)
+	var Y := Vector3(0, 1, 0)
+	var Z := Vector3(0, 0, 1)
+	var spine_lim := Vector3(0.6981317, 0.6981317, 0.6981317)
+	var t := {}
+	for n in ["Hips", "Spine", "Chest", "Neck", "Head"]:
+		t[n] = [Y, -X, Vector3(1, 1, 1), -spine_lim, spine_lim, Quaternion.IDENTITY]
+	t["UpperChest"] = [Y, -X, Vector3(1, 1, 1), -spine_lim * 0.5, spine_lim * 0.5, Quaternion.IDENTITY]
+	var sh_min := Vector3(0, -0.2617994, -0.2617994)
+	var sh_max := Vector3(0, 0.2617994, 0.5235988)
+	var ua_min := Vector3(-1.5707964, -1.7453293, -1.0471976)
+	var ua_max := Vector3(1.5707964, 1.7453293, 1.7453293)
+	var la_min := Vector3(-1.5707964, 0, -1.3962634)
+	var la_max := Vector3(1.5707964, 0, 1.3962634)
+	var h_min := Vector3(0, -0.6981317, -1.3962634)
+	var h_max := Vector3(0, 0.6981317, 1.3962634)
+	var bend := Quaternion(0, 0, 0.642743, 0.766082)
+	t["LeftShoulder"] = [-X, Z, Vector3(1, 1, -1), sh_min, sh_max, Quaternion.IDENTITY]
+	t["LeftUpperArm"] = [-X, Z, Vector3(1, 1, -1), ua_min, ua_max, Quaternion(0, -0.24421, 0.331688, 0.911232)]
+	t["LeftLowerArm"] = [-X, Y, Vector3(1, 1, -1), la_min, la_max, bend]
+	t["LeftHand"] = [-X, Z, Vector3(1, 1, -1), h_min, h_max, Quaternion.IDENTITY]
+	t["RightShoulder"] = [X, Z, Vector3(1, 1, 1), sh_min, sh_max, Quaternion.IDENTITY]
+	t["RightUpperArm"] = [X, Z, Vector3(-1, 1, 1), ua_min, ua_max, Quaternion(0, -0.24421, -0.331688, 0.911232)]
+	t["RightLowerArm"] = [X, Y, Vector3(-1, 1, 1), la_min, la_max, Quaternion(0, 0, -0.642743, 0.766082)]
+	t["RightHand"] = [X, Z, Vector3(1, 1, 1), h_min, h_max, Quaternion.IDENTITY]
+	var ul_min := Vector3(-1.0471976, -1.0471976, -1.5707964)
+	var ul_max := Vector3(1.0471976, 1.0471976, 0.8726646)
+	var thigh := Quaternion(0, 0, -0.258865, 0.965914)
+	var f_min := Vector3(0, -0.5235988, -0.8726646)
+	var f_max := Vector3(0, 0.5235988, 0.8726646)
+	var toe_min := Vector3(0, 0, -0.8726646)
+	var toe_max := Vector3(0, 0, 0.8726646)
+	t["LeftUpperLeg"] = [-Y, X, Vector3(1, 1, 1), ul_min, ul_max, thigh]
+	t["LeftLowerLeg"] = [-Y, X, Vector3(1, 1, -1), la_min, la_max, bend]
+	t["LeftFoot"] = [-Y, X, Vector3(1, 1, 1), f_min, f_max, Quaternion.IDENTITY]
+	t["LeftToes"] = [Z, X, Vector3(1, 1, 1), toe_min, toe_max, Quaternion.IDENTITY]
+	t["RightUpperLeg"] = [-Y, X, Vector3(-1, -1, 1), ul_min, ul_max, thigh]
+	t["RightLowerLeg"] = [-Y, X, Vector3(-1, 1, -1), la_min, la_max, bend]
+	t["RightFoot"] = [-Y, X, Vector3(1, -1, 1), f_min, f_max, Quaternion.IDENTITY]
+	t["RightToes"] = [Z, X, Vector3(1, 1, 1), toe_min, toe_max, Quaternion.IDENTITY]
+	finger_rows(t)
+	return t
+
+
+# Fingers, measured the same way from Avatars the editor built for the T-posed Tari in four
+# skeleton variants (as delivered, finger rotations scrambled, chains bent 25 and -15 degrees), all
+# agreeing to 3.2e-7. Frame: x toward the next joint of the finger (the distal keeps its parent's
+# direction), template z kept (+Y for the thumb, +Z for the others). Length: the distance to the
+# next joint; the distal's is 9/16 of its parent's. The zero-muscle frame is W F, with W a fixed
+# rotation in source-asset space (the 7th entry, so PreQ = R_parent^-1 W F); the right hand is the
+# left mirrored in x.
+func finger_rows(t: Dictionary) -> void:
+	var thumb_lim := [Vector3(0, -0.43633232, -0.34906584), Vector3(0, 0.43633232, 0.34906584)]
+	var curl_lim := [Vector3(0, 0, -0.6981317), Vector3(0, 0, 0.61086524)]
+	var bend_lim := [Vector3(0, 0, -0.7853982), Vector3(0, 0, 0.7853982)]
+	var spread := [0.34906584, 0.34906584, 0.1308997, 0.1308997, 0.34906584]
+	var bend := Quaternion(0, 0, 0.313377, 0.949629)
+	var base_w := [Quaternion(0, 0.123091, 0.123091, 0.984732), Quaternion(0, 0.076402, 0.286508, 0.955027),
+		Quaternion(0, 0.038285, 0.287137, 0.957124), Quaternion(0, -0.038285, 0.287137, 0.957124),
+		Quaternion(0, -0.076402, 0.286508, 0.955027)]
+	var base_sgn := [Vector3(-1, -1, 1), Vector3(-1, -1, -1), Vector3(-1, -1, -1), Vector3(-1, 1, -1),
+		Vector3(-1, 1, -1)]
+	for side in ["Left", "Right"]:
+		var m := 1.0 if side == "Left" else -1.0
+		for f in FINGERS.size():
+			var z := Vector3(0, 1, 0) if f == 0 else Vector3(0, 0, 1)
+			for k in 3:
+				var sgn: Vector3
+				var lo: Vector3
+				var hi: Vector3
+				var w: Quaternion
+				if k == 0:
+					sgn = base_sgn[f]
+					w = base_w[f]
+					if f == 0:
+						lo = thumb_lim[0]
+						hi = thumb_lim[1]
+					else:
+						lo = Vector3(0, -spread[f], -0.87266463)
+						hi = Vector3(0, spread[f], 0.87266463)
+				elif f == 0:
+					sgn = Vector3(-1, 1, 1)
+					w = Quaternion(0, -0.196116, 0, 0.980581)
+					lo = curl_lim[0]
+					hi = curl_lim[1]
+				else:
+					sgn = Vector3(-1, 1, -1)
+					w = bend
+					lo = bend_lim[0]
+					hi = bend_lim[1]
+				if m < 0:
+					sgn = Vector3(-sgn.x, sgn.y, -sgn.z)
+					w = Quaternion(w.x, -w.y, -w.z, w.w)
+				t[finger_name(side, f, k)] = [Vector3(-m, 0, 0), z, sgn, lo, hi, Quaternion.IDENTITY, w]
+
+
+# ---- glTF ----------------------------------------------------------------------------------
+
+func glb_json(glb: PackedByteArray) -> Dictionary:
+	if glb.size() < 20 or glb.decode_u32(0) != GLB_MAGIC or glb.decode_u32(16) != CHUNK_JSON:
+		return {}
+	var n: int = glb.decode_u32(12)
+	var parsed = JSON.parse_string(glb.slice(20, 20 + n).get_string_from_utf8())
+	if parsed is Dictionary:
+		return parsed
+	return {}
+
+
+func glb_bin(glb: PackedByteArray) -> PackedByteArray:
+	var at: int = 20 + glb.decode_u32(12)
+	if at + 8 > glb.size() or glb.decode_u32(at + 4) != CHUNK_BIN:
+		return PackedByteArray()
+	return glb.slice(at + 8, at + 8 + glb.decode_u32(at))
+
+
+func node_local(n: Dictionary) -> Transform3D:
+	if n.has("matrix"):
+		var a: Array = n["matrix"]
+		return Transform3D(Basis(Vector3(a[0], a[1], a[2]), Vector3(a[4], a[5], a[6]),
+			Vector3(a[8], a[9], a[10])), Vector3(a[12], a[13], a[14]))
+	var t: Array = n.get("translation", [0, 0, 0])
+	var r: Array = n.get("rotation", [0, 0, 0, 1])
+	var s: Array = n.get("scale", [1, 1, 1])
+	return Transform3D(Basis(Quaternion(r[0], r[1], r[2], r[3])).scaled(Vector3(s[0], s[1], s[2])),
+		Vector3(t[0], t[1], t[2]))
+
+
+# [byte offset of the first element, stride, component type, component count]
+func accessor_info(gltf: Dictionary, index: int) -> Array:
+	var acc: Dictionary = gltf["accessors"][index]
+	var view: Dictionary = gltf["bufferViews"][int(acc["bufferView"])]
+	var ctype: int = int(acc["componentType"])
+	var csize: int = 4
+	if ctype == 5120 or ctype == 5121:
+		csize = 1
+	elif ctype == 5122 or ctype == 5123:
+		csize = 2
+	var count := {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
+	var comps: int = count[str(acc["type"])]
+	return [int(view.get("byteOffset", 0)) + int(acc.get("byteOffset", 0)),
+		int(view.get("byteStride", csize * comps)), ctype, comps, int(acc["count"])]
+
+
+func read(bin: PackedByteArray, at: int, ctype: int) -> float:
+	if ctype == 5126:
+		return bin.decode_float(at)
+	if ctype == 5121:
+		return float(bin.decode_u8(at))
+	if ctype == 5123:
+		return float(bin.decode_u16(at))
+	return float(bin.decode_u32(at))
+
+
+# ---- source-asset space: glTF with X mirrored -----------------------------------------------
+
+func u_vec(v: Vector3) -> Vector3:
+	return Vector3(-v.x, v.y, v.z)
+
+
+func u_quat(q: Quaternion) -> Quaternion:
+	return Quaternion(q.x, -q.y, -q.z, q.w)
+
+
+func u_xform(t: Transform3D) -> Transform3D:
+	var m := Basis(Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1))
+	return Transform3D(m * t.basis * m, u_vec(t.origin))
+
+
+# ---- YAML scalars ------------------------------------------------------------------------------
+
+func f(v: float) -> String:
+	if is_inf(v):
+		return "Infinity" if v > 0 else "-Infinity"
+	if v == 0.0:
+		return "0"
+	return String.num(v, 9)
+
+
+func v3(v: Vector3) -> String:
+	return "{x: %s, y: %s, z: %s}" % [f(v.x), f(v.y), f(v.z)]
+
+
+func q4(q: Quaternion) -> String:
+	return "{x: %s, y: %s, z: %s, w: %s}" % [f(q.x), f(q.y), f(q.z), f(q.w)]
+
+
+func i32_hex(values: Array) -> String:
+	var b := PackedByteArray()
+	b.resize(4 * values.size())
+	for i in values.size():
+		b.encode_s32(4 * i, int(values[i]))
+	return b.hex_encode()
+
+
+func u32_hex(values: Array) -> String:
+	var b := PackedByteArray()
+	b.resize(4 * values.size())
+	for i in values.size():
+		b.encode_u32(4 * i, int(values[i]))
+	return b.hex_encode()
+
+
+# crc32 of a path or name (zlib's polynomial).
+var _crc_table := PackedInt64Array()
+
+
+func crc32(s: String) -> int:
+	if _crc_table.is_empty():
+		_crc_table.resize(256)
+		for n in 256:
+			var c: int = n
+			for k in 8:
+				c = (0xEDB88320 ^ (c >> 1)) if (c & 1) else (c >> 1)
+			_crc_table[n] = c
+	var crc: int = 0xFFFFFFFF
+	for byte in s.to_utf8_buffer():
+		crc = _crc_table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
+	return crc ^ 0xFFFFFFFF
+
+
+func file_id(kind: String, path: String) -> int:
+	# 60 bits of md5: positive, non-zero, stable across runs.
+	return ("%s:%s" % [kind, path]).md5_text().substr(0, 15).hex_to_int() + 1
+
+
+func ref(id: int) -> String:
+	return "{fileID: %d}" % id
+
+
+func ext_ref(id: int, guid: String) -> String:
+	return "{fileID: %d, guid: %s, type: 2}" % [id, guid]
+
+
+# ---- the scene graph that goes into the .prefab ------------------------------------------------
+
+# nodes: Array of {name, path, parent (index or -1), local (source-asset space Transform3D), global}
+# index 0 is the avatar root; then "Body", then the skin's joints in hierarchy order.
+func build_nodes(gltf: Dictionary, name: String, skin_index: int) -> Array:
+	var gnodes: Array = gltf["nodes"]
+	var parent := []
+	parent.resize(gnodes.size())
+	parent.fill(-1)
+	for i in gnodes.size():
+		for c in gnodes[i].get("children", []):
+			parent[int(c)] = i
+	var globals := []
+	for i in gnodes.size():
+		var x := node_local(gnodes[i])
+		var p: int = parent[i]
+		while p >= 0:
+			x = node_local(gnodes[p]) * x
+			p = parent[p]
+		globals.append(x)
+	var joints: Array = gltf["skins"][skin_index]["joints"]
+	var is_joint := {}
+	for j in joints:
+		is_joint[int(j)] = true
+	var nodes := [{"name": name, "path": "", "parent": -1, "gltf": -1,
+		"local": Transform3D.IDENTITY, "global": Transform3D.IDENTITY}]
+	nodes.append({"name": "Body", "path": "Body", "parent": 0, "gltf": -1,
+		"local": Transform3D.IDENTITY, "global": Transform3D.IDENTITY})
+	var index_of := {}
+	var stack := []
+	for j in joints:
+		var p: int = parent[int(j)]
+		if p < 0 or not is_joint.has(p):
+			stack.append(int(j))
+	stack.reverse()
+	while not stack.is_empty():
+		var g: int = stack.pop_back()
+		var p: int = parent[g]
+		var up: int = 0
+		var local: Transform3D = u_xform(globals[g])
+		if p >= 0 and is_joint.has(p):
+			up = index_of[p]
+			local = u_xform(globals[p]).affine_inverse() * u_xform(globals[g])
+		var nm := str(gnodes[g].get("name", "node_%d" % g))
+		var path: String = nm if up == 0 else nodes[up]["path"] + "/" + nm
+		index_of[g] = nodes.size()
+		nodes.append({"name": nm, "path": path, "parent": up, "gltf": g, "local": local,
+			"global": u_xform(globals[g])})
+		var kids: Array = gnodes[g].get("children", []).duplicate()
+		kids.reverse()
+		for c in kids:
+			if is_joint.has(int(c)):
+				stack.append(int(c))
+	return [nodes, index_of, globals]
+
+
+# Child indices of every node, in one pass (a scan per node is quadratic and runs out the
+# instruction budget on rigs with a few hundred bones).
+func children_lists(nodes: Array) -> Array:
+	var out := []
+	for k in nodes.size():
+		out.append([])
+	for k in nodes.size():
+		var p: int = nodes[k]["parent"]
+		if p >= 0:
+			out[p].append(k)
+	return out
+
+
+# ---- the mesh ------------------------------------------------------------------------------------
+
+# Every primitive skinned by `skin_index` goes into one Mesh, one submesh per material. Each
+# attribute is its own vertex stream (four are allowed), moved with bulk engine operators: a
+# per-vertex loop in the guest runs out of its instruction budget on a 100k-vertex model.
+# X is mirrored into source-asset space and each triangle's winding turned over to match.
+func f32_to_vec3(b: PackedByteArray) -> PackedVector3Array:
+	if PackedVector3Array([Vector3()]).to_byte_array().size() == 24:
+		return PackedFloat64Array(Array(b.to_float32_array())).to_byte_array().to_vector3_array()
+	return b.to_vector3_array()
+
+
+func vec3_to_f32(v: PackedVector3Array) -> PackedByteArray:
+	if PackedVector3Array([Vector3()]).to_byte_array().size() == 24:
+		return PackedFloat32Array(Array(v.to_byte_array().to_float64_array())).to_byte_array()
+	return v.to_byte_array()
+
+
+func vec3_to_u32(v: PackedVector3Array) -> PackedByteArray:
+	if PackedVector3Array([Vector3()]).to_byte_array().size() == 24:
+		return PackedInt32Array(Array(v.to_byte_array().to_float64_array())).to_byte_array()
+	return PackedInt32Array(Array(v.to_byte_array().to_float32_array())).to_byte_array()
+
+
+func tight(gltf: Dictionary, bin: PackedByteArray, index: int, ctype: int, comps: int, csize: int) -> PackedByteArray:
+	var info: Array = accessor_info(gltf, index)
+	if info[3] != comps:
+		return PackedByteArray()
+	if info[2] == ctype and info[1] == comps * csize:
+		return bin.slice(info[0], info[0] + info[4] * comps * csize)
+	# Other layouts are converted one component at a time: interleaved views, u8 joints (Godot's
+	# exporter writes them for skins under 256 joints) and normalized u8/u16 weights.
+	var src: int = info[2]
+	if src != 5126 and src != 5121 and src != 5123:
+		return PackedByteArray()
+	if ctype != 5126 and src == 5126:
+		return PackedByteArray()
+	var ssize: int = 4 if src == 5126 else (1 if src == 5121 else 2)
+	var scale: float = 1.0
+	if ctype == 5126 and src != 5126:
+		scale = 1.0 / (255.0 if src == 5121 else 65535.0)
+	var out := PackedByteArray()
+	out.resize(info[4] * comps * csize)
+	var o := 0
+	for v in int(info[4]):
+		var at: int = info[0] + v * info[1]
+		for k in comps:
+			var x: float = read(bin, at + k * ssize, src) * scale
+			if ctype == 5126:
+				out.encode_float(o, x)
+			else:
+				out.encode_u16(o, int(x))
+			o += csize
+	return out
+
+
+func build_mesh(gltf: Dictionary, bin: PackedByteArray, skin_index: int, nodes: Array, index_of: Dictionary,
+		globals: Array) -> Dictionary:
+	var skin: Dictionary = gltf["skins"][skin_index]
+	var joints: Array = skin["joints"]
+	var ib: Array = accessor_info(gltf, int(skin["inverseBindMatrices"]))
+	for k in joints.size():
+		var a := []
+		for e in 16:
+			a.append(bin.decode_float(ib[0] + 64 * k + 4 * e))
+		var m: Transform3D = globals[int(joints[k])] * node_local({"matrix": a})
+		if not m.is_equal_approx(Transform3D.IDENTITY):
+			last_error = "joint %d: its inverse bind matrix is not its rest pose inverted" % k
+			return {}
+	var mirror := Transform3D(Basis(Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1)), Vector3.ZERO)
+	var pos := PackedByteArray()
+	var nrm := PackedByteArray()
+	var wts := PackedByteArray()
+	var jts := PackedByteArray()
+	var by_material := {}
+	var count := 0
+	var lo := Vector3(INF, INF, INF)
+	var hi := Vector3(-INF, -INF, -INF)
+	for node in gltf["nodes"]:
+		if not node.has("mesh") or int(node.get("skin", -1)) != skin_index:
+			continue
+		for prim in gltf["meshes"][int(node["mesh"])]["primitives"]:
+			var at: Dictionary = prim["attributes"]
+			var pi := int(at["POSITION"])
+			var p := tight(gltf, bin, pi, 5126, 3, 4)
+			var n := tight(gltf, bin, int(at.get("NORMAL", -1)), 5126, 3, 4) if at.has("NORMAL") else PackedByteArray()
+			var w := tight(gltf, bin, int(at["WEIGHTS_0"]), 5126, 4, 4)
+			var j := tight(gltf, bin, int(at["JOINTS_0"]), 5123, 4, 2)
+			var nv: int = accessor_info(gltf, pi)[4]
+			if p.is_empty() or w.is_empty() or j.is_empty() or (at.has("NORMAL") and n.is_empty()):
+				last_error = "a primitive is not tightly packed float positions, float weights and u16 joints"
+				return {}
+			if n.is_empty():
+				n.resize(nv * 12)
+			pos.append_array(vec3_to_f32(mirror * f32_to_vec3(p)))
+			nrm.append_array(vec3_to_f32(mirror * f32_to_vec3(n)))
+			wts.append_array(w)
+			jts.append_array(j)
+			var acc: Dictionary = gltf["accessors"][pi]
+			if acc.has("min") and acc.has("max"):
+				var amin := u_vec(Vector3(acc["min"][0], acc["min"][1], acc["min"][2]))
+				var amax := u_vec(Vector3(acc["max"][0], acc["max"][1], acc["max"][2]))
+				lo = lo.min(amin.min(amax))
+				hi = hi.max(amin.max(amax))
+			var mat: int = int(prim.get("material", 0))
+			if not by_material.has(mat):
+				by_material[mat] = PackedByteArray()
+			var tris := tight(gltf, bin, int(prim.get("indices", -1)), 5125, 1, 4) if prim.has("indices") else PackedByteArray()
+			if tris.is_empty():
+				last_error = "a primitive has no u32 index list"
+				return {}
+			var as_vec := PackedFloat64Array(Array(tris.to_int32_array())).to_byte_array().to_vector3_array()
+			if PackedVector3Array([Vector3()]).to_byte_array().size() != 24:
+				as_vec = PackedFloat32Array(Array(tris.to_int32_array())).to_byte_array().to_vector3_array()
+			# (a, b, c) -> (a, c, b) + base: the winding turns over with the mirror.
+			var flip := Transform3D(Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
+				Vector3(count, count, count))
+			var buf: PackedByteArray = by_material[mat]
+			buf.append_array(vec3_to_u32(flip * as_vec))
+			by_material[mat] = buf
+			count += nv
+	# Pad to a multiple of 4 vertices, so every stream's size is a multiple of 16 bytes and the
+	# streams start where the reader expects them, aligned or not.
+	var padded := count
+	while padded % 4 != 0:
+		padded += 1
+	var extra := padded - count
+	if extra > 0:
+		var z := PackedByteArray()
+		z.resize(extra * 16)
+		pos.append_array(z.slice(0, extra * 12))
+		nrm.append_array(z.slice(0, extra * 12))
+		wts.append_array(z)
+		jts.append_array(z.slice(0, extra * 8))
+	var bindposes := []
+	for k in joints.size():
+		var nd: Dictionary = nodes[index_of[int(joints[k])]]
+		bindposes.append((nd["global"] as Transform3D).affine_inverse())
+	return {"streams": [pos, nrm, wts, jts], "count": padded, "by_material": by_material,
+		"bindposes": bindposes, "lo": lo, "hi": hi, "joints": joints}
+
+
+func matrix_yaml(t: Transform3D) -> String:
+	var b := t.basis
+	var o := t.origin
+	return ("- e00: %s\n    e01: %s\n    e02: %s\n    e03: %s\n    e10: %s\n    e11: %s\n    e12: %s\n"
+		+ "    e13: %s\n    e20: %s\n    e21: %s\n    e22: %s\n    e23: %s\n    e30: 0\n    e31: 0\n"
+		+ "    e32: 0\n    e33: 1\n") % [f(b.x.x), f(b.y.x), f(b.z.x), f(o.x), f(b.x.y), f(b.y.y), f(b.z.y),
+		f(o.y), f(b.x.z), f(b.y.z), f(b.z.z), f(o.z)]
+
+
+func aabb_yaml(lo: Vector3, hi: Vector3, indent: String) -> String:
+	return "%sm_Center: %s\n%sm_Extent: %s\n" % [indent, v3((lo + hi) * 0.5), indent, v3((hi - lo) * 0.5)]
+
+
+func channel(stream: int, offset: int, format: int, dim: int) -> String:
+	return "    - stream: %d\n      offset: %d\n      format: %d\n      dimension: %d\n" % [stream, offset, format, dim]
+
+
+func mesh_yaml(m: Dictionary, name: String, materials: Array) -> String:
+	var idx := PackedByteArray()
+	var subs := ""
+	for mat in materials:
+		var tris: PackedByteArray = m["by_material"][mat]
+		subs += ("  - serializedVersion: 2\n    firstByte: %d\n    indexCount: %d\n    topology: 0\n"
+			+ "    baseVertex: 0\n    firstVertex: 0\n    vertexCount: %d\n    localAABB:\n") % [idx.size(),
+			tris.size() / 4, m["count"]]
+		subs += aabb_yaml(m["lo"], m["hi"], "      ")
+		idx.append_array(tris)
+	var binds := ""
+	for b in m["bindposes"]:
+		binds += "  " + matrix_yaml(b)
+	var chans := channel(0, 0, 0, 3) + channel(1, 0, 0, 3)
+	for k in 10:
+		chans += channel(0, 0, 0, 0)
+	chans += channel(2, 0, 0, 4) + channel(3, 0, 8, 4)
+	var data := PackedByteArray()
+	for st in m["streams"]:
+		data.append_array(st)
+	var s := HEADER + "--- !u!43 &4300000\nMesh:\n  m_ObjectHideFlags: 0\n"
+	s += "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n"
+	s += "  m_PrefabAsset: {fileID: 0}\n  m_Name: %s\n  serializedVersion: 11\n  m_SubMeshes:\n" % name
+	s += subs
+	s += "  m_Shapes:\n    vertices: []\n    shapes: []\n    channels: []\n    fullWeights: []\n"
+	s += "  m_BindPose:\n" + binds
+	s += "  m_BoneNameHashes: \n  m_RootBoneNameHash: 0\n  m_BonesAABB: []\n"
+	s += "  m_VariableBoneCountWeights:\n    m_Data: \n  m_MeshCompression: 0\n  m_IsReadable: 1\n"
+	s += "  m_KeepVertices: 0\n  m_KeepIndices: 0\n  m_IndexFormat: 1\n"
+	s += "  m_IndexBuffer: " + idx.hex_encode() + "\n"
+	s += "  m_VertexData:\n    serializedVersion: 3\n    m_VertexCount: %d\n    m_Channels:\n" % m["count"]
+	s += chans
+	s += "    m_DataSize: %d\n    _typelessdata: %s\n" % [data.size(), data.hex_encode()]
+	s += "  m_CompressedMesh:\n"
+	for part in ["m_Vertices", "m_UV", "m_Normals", "m_Tangents"]:
+		s += "    %s:\n      m_NumItems: 0\n      m_Range: 0\n      m_Start: 0\n      m_Data: \n      m_BitSize: 0\n" % part
+	for part in ["m_Weights", "m_NormalSigns", "m_TangentSigns"]:
+		s += "    %s:\n      m_NumItems: 0\n      m_Data: \n      m_BitSize: 0\n" % part
+	s += "    m_FloatColors:\n      m_NumItems: 0\n      m_Range: 0\n      m_Start: 0\n      m_Data: \n      m_BitSize: 0\n"
+	for part in ["m_BoneIndices", "m_Triangles"]:
+		s += "    %s:\n      m_NumItems: 0\n      m_Data: \n      m_BitSize: 0\n" % part
+	s += "    m_UVInfo: 0\n  m_LocalAABB:\n" + aabb_yaml(m["lo"], m["hi"], "    ")
+	s += "  m_MeshUsageFlags: 0\n  m_CookingOptions: 30\n  m_BakedConvexCollisionMesh: \n"
+	s += "  m_BakedTriangleCollisionMesh: \n  'm_MeshMetrics[0]': 1\n  'm_MeshMetrics[1]': 1\n"
+	s += "  m_MeshOptimizationFlags: 1\n  m_StreamData:\n    serializedVersion: 2\n    offset: 0\n"
+	s += "    size: 0\n    path: \n"
+	return s
+
+
+# ---- materials -----------------------------------------------------------------------------------
+
+func to_srgb(c: float) -> float:
+	if c <= 0.0031308:
+		return c * 12.92
+	return 1.055 * pow(c, 1.0 / 2.4) - 0.055
+
+
+# lilToon 2.3.4 shaders, by the glTF alphaMode: OPAQUE, MASK, BLEND. Each variant's own defaults
+# already carry that mode's blend, alpha-to-mask, render type and queue, so the material only
+# names the shader and sets _TransparentMode for lilToon's inspector.
+const LILTOON := {"OPAQUE": ["{fileID: 4800000, guid: df12117ecd77c31469c224178886498e, type: 3}", 0],
+	"MASK": ["{fileID: 4800000, guid: 85d6126cae43b6847aff4b13f4adb8ec, type: 3}", 1],
+	"BLEND": ["{fileID: 4800000, guid: 165365ab7100a044ca85fc8c33548a62, type: 3}", 2]}
+const LILTOON_VERSION := 45
+
+
+func color_yaml(c: Array, alpha: float) -> String:
+	return "{r: %s, g: %s, b: %s, a: %s}" % [f(to_srgb(c[0])), f(to_srgb(c[1])), f(to_srgb(c[2])), f(alpha)]
+
+
+# A lilToon material from the glTF PBR base colour and the VRMC_materials_mtoon shading.
+# MToon 1.0 shades by linearstep(-1 + toony, 1 - toony, N.L + shift); lilToon by a linear ramp over
+# _ShadowBorder -+ _ShadowBlur / 2 in half-Lambert (N.L * 0.5 + 0.5). The two are the same ramp when
+# _ShadowBorder = 0.5 - shift / 2 and _ShadowBlur = 1 - toony.
+# MToon's shadow is shadeColor * shadeMultiplyTexture; lilToon's (no _ShadowColorTex) is
+# albedo * _ShadowColor = baseTexture * baseColor * _ShadowColor. With the shade texture equal to the
+# base texture, or neither present, _ShadowColor = shadeColor / baseColor (linear) gives MToon's.
+# _ShadowBorderColor is black: MToon has no coloured band at the shadow edge.
+# tex_guid: GUID of the base colour texture asset, or "" for none.
+func material_yaml(m: Dictionary, tex_guid: String) -> String:
+	var pbr: Dictionary = m.get("pbrMetallicRoughness", {})
+	var c: Array = pbr.get("baseColorFactor", [1, 1, 1, 1])
+	var mode: String = str(m.get("alphaMode", "OPAQUE"))
+	if not LILTOON.has(mode):
+		mode = "OPAQUE"
+	var mtoon: Dictionary = m.get("extensions", {}).get("VRMC_materials_mtoon", {})
+	var s := HEADER + "--- !u!21 &2100000\nMaterial:\n  serializedVersion: 8\n  m_ObjectHideFlags: 0\n"
+	s += "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n"
+	s += "  m_PrefabAsset: {fileID: 0}\n  m_Name: %s\n  m_Shader: %s\n" % [str(m.get("name", "Material")),
+		LILTOON[mode][0]]
+	s += "  m_Parent: {fileID: 0}\n  m_ModifiedSerializedProperties: 0\n  m_ValidKeywords: []\n"
+	s += "  m_InvalidKeywords: []\n  m_LightmapFlags: 4\n  m_EnableInstancingVariants: 0\n"
+	s += "  m_DoubleSidedGI: 0\n  m_CustomRenderQueue: -1\n  stringTagMap: {}\n  disabledShaderPasses: []\n"
+	s += "  m_LockedProperties: \n  m_SavedProperties:\n    serializedVersion: 3\n"
+	if tex_guid == "":
+		s += "    m_TexEnvs: []\n"
+	else:
+		s += ("    m_TexEnvs:\n    - _MainTex:\n        m_Texture: {fileID: 2800000, guid: %s, type: 3}\n"
+			+ "        m_Scale: {x: 1, y: 1}\n        m_Offset: {x: 0, y: 0}\n") % tex_guid
+	s += "    m_Ints: []\n    m_Floats:\n"
+	s += "    - _lilToonVersion: %d\n    - _TransparentMode: %d\n" % [LILTOON_VERSION, LILTOON[mode][1]]
+	s += "    - _Cull: %d\n" % (0 if bool(m.get("doubleSided", false)) else 2)
+	s += "    - _Cutoff: %s\n" % f(float(m.get("alphaCutoff", 0.5)))
+	var shadow := ""
+	if not mtoon.is_empty():
+		var shift := float(mtoon.get("shadingShiftFactor", 0.0))
+		var toony := float(mtoon.get("shadingToonyFactor", 0.9))
+		s += "    - _UseShadow: 1\n    - _ShadowStrength: 1\n    - _ShadowBorderRange: 0\n"
+		s += "    - _ShadowBorder: %s\n    - _ShadowBlur: %s\n" % [f(clampf(0.5 - shift * 0.5, 0.0, 1.0)),
+			f(clampf(1.0 - toony, 0.0, 1.0))]
+		var shade: Array = mtoon.get("shadeColorFactor", [0, 0, 0])
+		var ratio := []
+		for k in 3:
+			var b := float(c[k])
+			ratio.append(clampf(float(shade[k]) / b, 0.0, 1.0) if b > 0.0 else float(shade[k]))
+		shadow = "    - _ShadowColor: %s\n    - _ShadowBorderColor: {r: 0, g: 0, b: 0, a: 1}\n" % color_yaml(
+			ratio, 1.0)
+	s += "    m_Colors:\n    - _Color: %s\n" % color_yaml(c, float(c[3])) + shadow
+	s += "  m_BuildTextureStacks: []\n"
+	return s
+
+
+# ---- the humanoid Avatar -------------------------------------------------------------------------
+
+func axes_frame(row: Array, end: bool, direction: Vector3) -> Basis:
+	var x: Vector3 = row[0]
+	if not end and direction.length() > 1e-9:
+		x = direction.normalized()
+	var y: Vector3 = (row[1] as Vector3).cross(x).normalized()
+	var z := x.cross(y)
+	return Basis(x, y, z)
+
+
+func rot_of(t: Transform3D) -> Basis:
+	return t.basis.orthonormalized()
+
+
+# The humanoid centre of mass (m_RootX.t, and bodyPosition at run time). Each body bone is a rigid
+# segment with its humanoid mass; its centre is the centroid of its own joint and its human
+# children's joints. The hips use only their children; feet, hands, toes and the head sit at their
+# joint; the left upper arm's centre is 1/8 of the way to the elbow, not 1/2. A missing bone
+# (UpperChest) gives its mass to its nearest human parent. Solved from one-joint-at-a-time poses of
+# two avatars the editor built itself (test/humanoid_mass), 566 poses, worst error 4.9e-7 m.
+func mass_centre(pos: Dictionary, hname: Dictionary, hnodes: Array, hparent: Array) -> Vector3:
+	var kids := {}
+	for k in range(1, hnodes.size()):
+		var n: String = hname[hnodes[k]]
+		var p: String = hname[hnodes[hparent[k]]] if hparent[k] > 0 else ""
+		if p != "":
+			if not kids.has(p):
+				kids[p] = []
+			kids[p].append(n)
+	var mass := {}
+	for b in HUMAN_BONES.size():
+		var n: String = HUMAN_BONES[b]
+		if MASS[b] <= 0.0:
+			continue
+		var owner := n
+		var walk := n
+		while not pos.has(owner) and walk != "":
+			walk = PARENT_OF.get(walk, "")
+			owner = walk
+		if owner != "":
+			mass[owner] = mass.get(owner, 0.0) + MASS[b]
+	var acc := Vector3.ZERO
+	var total := 0.0
+	for n in mass:
+		var c: Vector3 = pos[n]
+		var ends: bool = n.ends_with("Foot") or n.ends_with("Hand") or n.ends_with("Toes") or n == "Head"
+		if not ends and kids.has(n):
+			var sum := Vector3.ZERO
+			var count := 0
+			if n != "Hips":
+				sum += pos[n]
+				count += 1
+			for ch in kids[n]:
+				sum += pos[ch]
+				count += 1
+			var centroid := sum / count
+			c = pos[n] + (centroid - pos[n]) * (0.25 if n == "LeftUpperArm" else 1.0)
+		acc += c * mass[n]
+		total += mass[n]
+	return acc / total
+
+
+func avatar_yaml(nodes: Array, human: Dictionary) -> String:
+	# human: humanoid bone name -> node index
+	var table := axes_table()
+	var hnodes := [0]
+	var hname := {0: ""}
+	for i in nodes.size():
+		for n in human:
+			if human[n] == i:
+				hnodes.append(i)
+				hname[i] = n
+	var hindex := {}
+	for k in hnodes.size():
+		hindex[hnodes[k]] = k
+	var hparent := [-1]
+	for k in range(1, hnodes.size()):
+		var p: int = nodes[hnodes[k]]["parent"]
+		while p > 0 and not hindex.has(p):
+			p = nodes[p]["parent"]
+		hparent.append(hindex[p] if hindex.has(p) else 0)
+	var pos := {}
+	for n in human:
+		pos[n] = (nodes[human[n]]["global"] as Transform3D).origin
+	var axes := ""
+	var lengths := {}
+	var frames := {}
+	for k in range(1, hnodes.size()):
+		var i: int = hnodes[k]
+		var n: String = hname[i]
+		var row: Array = table[n]
+		var direction := Vector3.ZERO
+		var child_len := 0.0
+		for c in CHILDREN.get(n, []):
+			if human.has(c):
+				direction = pos[c] - pos[n]
+				child_len = direction.length()
+				break
+		var finger: bool = row.size() > 6
+		var length := child_len
+		if finger:
+			var parts: PackedStringArray = n.split(" ")
+			var ph: int = PHALANGES.find(parts[2])
+			if ph < 2:
+				var next := "%s %s %s" % [parts[0], parts[1], PHALANGES[ph + 1]]
+				if human.has(next):
+					direction = pos[next] - pos[n]
+			else:
+				var prev := "%s %s %s" % [parts[0], parts[1], PHALANGES[1]]
+				if human.has(prev):
+					direction = pos[n] - pos[prev]
+			length = direction.length() * (0.5625 if ph == 2 else 1.0)
+		elif n == "Head":
+			length = (pos["Head"] - pos["Neck"]).length() if human.has("Neck") else 0.1
+		elif n.ends_with("Hand"):
+			var side := n.trim_suffix("Hand")
+			length = 0.25 * (pos[n] - pos[side + "LowerArm"]).length()
+		elif n.ends_with("Foot"):
+			length = pos[n].y
+		elif n.ends_with("Toes"):
+			var side := n.trim_suffix("Toes")
+			length = 0.25 * (pos[n] - pos[side + "Foot"]).length()
+		lengths[n] = length
+		var end := not CHILDREN.has(n) and not finger
+		var fr := axes_frame(row, end, direction)
+		frames[n] = fr
+		var rb := rot_of(nodes[i]["global"])
+		var rp := rot_of(nodes[hnodes[hparent[k]]]["global"])
+		var post := (rb.transposed() * fr).get_rotation_quaternion()
+		var pre := (rp.transposed() * fr * Basis(row[5] as Quaternion)).get_rotation_quaternion()
+		if finger:
+			pre = (rp.transposed() * Basis(row[6] as Quaternion) * fr).get_rotation_quaternion()
+		axes += ("            - m_PreQ: %s\n              m_PostQ: %s\n              m_Sgn: %s\n"
+			+ "              m_Limit:\n                m_Min: %s\n                m_Max: %s\n"
+			+ "              m_Length: %s\n              m_Type: 1\n") % [q4(pre), q4(post), v3(row[2]),
+			v3(row[3]), v3(row[4]), f(length)]
+	# Root: the humanoid body frame (human_trait.gd / transform_util.gd getMassQ, getMassT).
+	var xa: Vector3 = (pos["RightUpperArm"] + pos["RightUpperLeg"]) - (pos["LeftUpperArm"] + pos["LeftUpperLeg"])
+	var ya: Vector3 = (pos["LeftUpperArm"] + pos["RightUpperArm"]) - (pos["LeftUpperLeg"] + pos["RightUpperLeg"])
+	xa = xa.normalized()
+	ya = ya.normalized()
+	var za := xa.cross(ya).normalized()
+	xa = ya.cross(za)
+	var root_q := Basis(xa, ya, za).get_rotation_quaternion()
+	var root_t := mass_centre(pos, hname, hnodes, hparent)
+	# Skeletons.
+	var ids := []
+	var names := []
+	var tos := ""
+	var sk_nodes := ""
+	var poses := ""
+	for i in nodes.size():
+		var n: Dictionary = nodes[i]
+		ids.append(0 if i == 0 else crc32(n["path"]))
+		names.append(0 if i == 0 else crc32(n["name"]))
+		sk_nodes += "        - m_ParentId: %d\n          m_AxesId: -1\n" % n["parent"]
+		var l: Transform3D = n["local"]
+		poses += "        - t: %s\n          q: %s\n          s: %s\n" % [v3(l.origin),
+			q4(l.basis.get_rotation_quaternion()), v3(l.basis.get_scale())]
+	for i in nodes.size():
+		tos += "    %d: %s\n" % [ids[i], nodes[i]["path"]]
+	var h_nodes := ""
+	var h_ids := []
+	var h_poses := ""
+	for k in hnodes.size():
+		h_nodes += "            - m_ParentId: %d\n              m_AxesId: %d\n" % [hparent[k], k - 1]
+		h_ids.append(ids[hnodes[k]])
+		var l := Transform3D.IDENTITY
+		if k > 0:
+			l = (nodes[hnodes[hparent[k]]]["global"] as Transform3D).affine_inverse() * nodes[hnodes[k]]["global"]
+		h_poses += "            - t: %s\n              q: %s\n              s: %s\n" % [v3(l.origin),
+			q4(l.basis.get_rotation_quaternion()), v3(l.basis.get_scale())]
+	var bone_index := []
+	var mass := []
+	for b in HUMAN_BONES.size():
+		bone_index.append(hindex[human[HUMAN_BONES[b]]] if human.has(HUMAN_BONES[b]) else -1)
+		mass.append("        - %s\n" % f(MASS[b]))
+	var reverse := []
+	for i in nodes.size():
+		reverse.append(hindex[i] if hindex.has(i) else -1)
+	var hands := {}
+	var has_hand := {}
+	for side in ["Left", "Right"]:
+		var idx := []
+		for f in FINGERS.size():
+			for k in 3:
+				var fn := finger_name(side, f, k)
+				idx.append(hindex[human[fn]] if human.has(fn) else -1)
+		hands[side] = idx
+		has_hand[side] = 0
+		for i in idx:
+			if i >= 0:
+				has_hand[side] = 1
+	var s := HEADER + "--- !u!90 &9000000\nAvatar:\n  m_ObjectHideFlags: 0\n"
+	s += "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n"
+	s += "  m_PrefabAsset: {fileID: 0}\n  m_Name: %sAvatar\n  m_AvatarSize: 0\n" % nodes[0]["name"]
+	s += "  m_Avatar:\n    serializedVersion: 3\n    m_AvatarSkeleton:\n      data:\n        m_Node:\n" + sk_nodes
+	s += "        m_ID: %s\n        m_AxesArray: []\n" % u32_hex(ids)
+	s += "    m_AvatarSkeletonPose:\n      data:\n        m_X:\n" + poses
+	s += "    m_DefaultPose:\n      data:\n        m_X:\n" + poses
+	s += "    m_SkeletonNameIDArray: %s\n" % u32_hex(names)
+	s += "    m_Human:\n      data:\n        serializedVersion: 2\n        m_RootX:\n"
+	s += "          t: %s\n          q: %s\n          s: {x: 1, y: 1, z: 1}\n" % [v3(root_t), q4(root_q)]
+	s += "        m_Skeleton:\n          data:\n            m_Node:\n" + h_nodes
+	s += "            m_ID: %s\n            m_AxesArray:\n" % u32_hex(h_ids) + axes
+	s += "        m_SkeletonPose:\n          data:\n            m_X:\n" + h_poses
+	s += "        m_LeftHand:\n          data:\n            m_HandBoneIndex: %s\n" % i32_hex(hands["Left"])
+	s += "        m_RightHand:\n          data:\n            m_HandBoneIndex: %s\n" % i32_hex(hands["Right"])
+	s += "        m_HumanBoneIndex: %s\n        m_HumanBoneMass:\n" % i32_hex(bone_index)
+	for line in mass:
+		s += line
+	s += "        m_Scale: %s\n        m_ArmTwist: 0.5\n        m_ForeArmTwist: 0.5\n" % f(root_t.y)
+	s += "        m_UpperLegTwist: 0.5\n        m_LegTwist: 0.5\n        m_ArmStretch: 0.05\n"
+	s += "        m_LegStretch: 0.05\n        m_FeetSpacing: 0\n        m_HasLeftHand: %d\n" % has_hand["Left"]
+	s += "        m_HasRightHand: %d\n        m_HasTDoF: 0\n" % has_hand["Right"]
+	s += "    m_HumanSkeletonIndexArray: %s\n" % i32_hex(hnodes)
+	s += "    m_HumanSkeletonReverseIndexArray: %s\n" % i32_hex(reverse)
+	s += "    m_RootMotionBoneIndex: -1\n    m_RootMotionBoneX:\n      t: {x: 0, y: 0, z: 0}\n"
+	s += "      q: {x: 0, y: 0, z: 0, w: 1}\n      s: {x: 1, y: 1, z: 1}\n"
+	s += "    m_RootMotionSkeleton:\n      data:\n        m_Node: []\n        m_ID: \n        m_AxesArray: []\n"
+	s += "    m_RootMotionSkeletonPose:\n      data:\n        m_X: []\n    m_RootMotionSkeletonIndexArray: \n"
+	s += "  m_TOS:\n" + tos
+	s += "  m_HumanDescription:\n    serializedVersion: 3\n    m_Human:\n"
+	var described: Array = HUMAN_BONES.duplicate()
+	for side in ["Left", "Right"]:
+		for f in FINGERS.size():
+			for k in 3:
+				described.append(finger_name(side, f, k))
+	for n in described:
+		if human.has(n):
+			s += ("    - m_BoneName: %s\n      m_HumanName: %s\n      m_Limit:\n        m_Min: {x: 0, y: 0, z: 0}\n"
+				+ "        m_Max: {x: 0, y: 0, z: 0}\n        m_Value: {x: 0, y: 0, z: 0}\n"
+				+ "        m_Length: 0\n        m_Modified: 0\n") % [nodes[human[n]]["name"], n]
+	s += "    m_Skeleton:\n"
+	for i in nodes.size():
+		var l: Transform3D = nodes[i]["local"]
+		s += ("    - m_Name: %s\n      m_ParentName: \n      m_Position: %s\n      m_Rotation: %s\n"
+			+ "      m_Scale: %s\n") % [nodes[i]["name"], v3(l.origin), q4(l.basis.get_rotation_quaternion()),
+			v3(l.basis.get_scale())]
+	s += "    m_ArmTwist: 0.5\n    m_ForeArmTwist: 0.5\n    m_UpperLegTwist: 0.5\n    m_LegTwist: 0.5\n"
+	s += "    m_ArmStretch: 0.05\n    m_LegStretch: 0.05\n    m_FeetSpacing: 0\n    m_GlobalScale: 1\n"
+	s += "    m_RootMotionBoneName: \n    m_HasTranslationDoF: 0\n    m_HasExtraRoot: 0\n"
+	s += "    m_SkeletonHasParents: 1\n"
+	return s
+
+
+# ---- the prefab ----------------------------------------------------------------------------------
+
+func prefab_yaml(nodes: Array, mesh: Dictionary, guids: Dictionary, materials: Array, view: Vector3,
+		index_of: Dictionary) -> String:
+	var go := []
+	var tr := []
+	for n in nodes:
+		go.append(file_id("go", n["path"]))
+		tr.append(file_id("tr", n["path"]))
+	var smr_id := file_id("smr", "Body")
+	var anim_id := file_id("animator", "")
+	var desc_id := file_id("descriptor", "")
+	var s := HEADER
+	var kids_of := children_lists(nodes)
+	for i in nodes.size():
+		var n: Dictionary = nodes[i]
+		var comps := "  - component: %s\n" % ref(tr[i])
+		if i == 0:
+			comps += "  - component: %s\n  - component: %s\n" % [ref(anim_id), ref(desc_id)]
+		if n["path"] == "Body":
+			comps += "  - component: %s\n" % ref(smr_id)
+		s += ("--- !u!1 &%d\nGameObject:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n"
+			+ "  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  serializedVersion: 6\n"
+			+ "  m_Component:\n%s  m_Layer: 0\n  m_Name: %s\n  m_TagString: Untagged\n  m_Icon: {fileID: 0}\n"
+			+ "  m_NavMeshLayer: 0\n  m_StaticEditorFlags: 0\n  m_IsActive: 1\n") % [go[i], comps, n["name"]]
+		var kids := ""
+		for c in kids_of[i]:
+			kids += "\n  - " + ref(tr[c])
+		var l: Transform3D = n["local"]
+		s += ("--- !u!4 &%d\nTransform:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n"
+			+ "  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: %s\n"
+			+ "  serializedVersion: 2\n  m_LocalRotation: %s\n  m_LocalPosition: %s\n  m_LocalScale: %s\n"
+			+ "  m_ConstrainProportionsScale: 0\n  m_Children:%s\n  m_Father: %s\n"
+			+ "  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}\n") % [tr[i], ref(go[i]),
+			q4(l.basis.get_rotation_quaternion()), v3(l.origin), v3(l.basis.get_scale()),
+			kids if kids != "" else " []", ref(tr[n["parent"]]) if n["parent"] >= 0 else ref(0)]
+	var mats := ""
+	for m in materials:
+		mats += "  - %s\n" % ext_ref(2100000, guids["mat%d" % m])
+	var bones := ""
+	for j in mesh["joints"]:
+		bones += "  - %s\n" % ref(tr[index_of[int(j)]])
+	s += ("--- !u!137 &%d\nSkinnedMeshRenderer:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n"
+		+ "  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: %s\n  m_Enabled: 1\n"
+		+ "  m_CastShadows: 1\n  m_ReceiveShadows: 1\n  m_DynamicOccludee: 1\n  m_StaticShadowCaster: 0\n"
+		+ "  m_MotionVectors: 1\n  m_LightProbeUsage: 1\n  m_ReflectionProbeUsage: 1\n  m_RayTracingMode: 3\n"
+		+ "  m_RayTraceProcedural: 0\n  m_RenderingLayerMask: 1\n  m_RendererPriority: 0\n  m_Materials:\n%s"
+		+ "  m_StaticBatchInfo:\n    firstSubMesh: 0\n    subMeshCount: 0\n  m_StaticBatchRoot: {fileID: 0}\n"
+		+ "  m_ProbeAnchor: {fileID: 0}\n  m_LightProbeVolumeOverride: {fileID: 0}\n  m_ScaleInLightmap: 1\n"
+		+ "  m_ReceiveGI: 1\n  m_PreserveUVs: 0\n  m_IgnoreNormalsForChartDetection: 0\n  m_ImportantGI: 0\n"
+		+ "  m_StitchLightmapSeams: 1\n  m_SelectedEditorRenderState: 3\n  m_MinimumChartSize: 4\n"
+		+ "  m_AutoUVMaxDistance: 0.5\n  m_AutoUVMaxAngle: 89\n  m_LightmapParameters: {fileID: 0}\n"
+		+ "  m_SortingLayerID: 0\n  m_SortingLayer: 0\n  m_SortingOrder: 0\n  serializedVersion: 2\n"
+		+ "  m_Quality: 0\n  m_UpdateWhenOffscreen: 0\n  m_SkinnedMotionVectors: 1\n  m_Mesh: %s\n"
+		+ "  m_Bones:\n%s  m_BlendShapeWeights: []\n  m_RootBone: %s\n  m_AABB:\n"
+		+ "    m_Center: {x: 0, y: 0, z: 0}\n    m_Extent: {x: 0, y: 0, z: 0}\n  m_DirtyAABB: 1\n") % [
+		smr_id, ref(go[1]), mats, ext_ref(4300000, guids["mesh"]), bones, ref(tr[index_of[int(mesh["joints"][0])]])]
+	s += ("--- !u!95 &%d\nAnimator:\n  serializedVersion: 5\n  m_ObjectHideFlags: 0\n"
+		+ "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n"
+		+ "  m_GameObject: %s\n  m_Enabled: 1\n  m_Avatar: %s\n  m_Controller: {fileID: 0}\n  m_CullingMode: 0\n"
+		+ "  m_UpdateMode: 0\n  m_ApplyRootMotion: 0\n  m_LinearVelocityBlending: 0\n  m_StabilizeFeet: 0\n"
+		+ "  m_WarningMessage: \n  m_HasTransformHierarchy: 1\n  m_AllowConstantClipSamplingOptimization: 1\n"
+		+ "  m_KeepAnimatorStateOnDisable: 0\n  m_WriteDefaultValuesOnDisable: 0\n") % [anim_id, ref(go[0]),
+		ext_ref(9000000, guids["avatar"])]
+	s += ("--- !u!114 &%d\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n"
+		+ "  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: %s\n  m_Enabled: 1\n"
+		+ "  m_EditorHideFlags: 0\n  m_Script: %s\n  m_Name: \n  m_EditorClassIdentifier: \n  Name: \n"
+		+ "  ViewPosition: %s\n  Animations: 0\n  ScaleIPD: 1\n  lipSync: 0\n  autoFootsteps: 1\n"
+		+ "  autoLocomotion: 1\n") % [desc_id, ref(go[0]), DESCRIPTOR_SCRIPT, v3(view)]
+	return s
+
+
+# ---- the package ---------------------------------------------------------------------------------
+
+func guid_for(path: String) -> String:
+	return ("unidot-avatar-export:" + path).md5_text()
+
+
+func octal(v: int, width: int) -> PackedByteArray:
+	var s := ""
+	var x := v
+	while x > 0:
+		s = str(x % 8) + s
+		x = x / 8
+	while s.length() < width - 1:
+		s = "0" + s
+	var b := s.to_ascii_buffer()
+	b.append(0)
+	return b
+
+
+func put(dst: PackedByteArray, at: int, src: PackedByteArray) -> void:
+	for i in src.size():
+		dst[at + i] = src[i]
+
+
+func tar_member(name: String, data: PackedByteArray, is_dir: bool) -> PackedByteArray:
+	var h := PackedByteArray()
+	h.resize(512)
+	put(h, 0, name.to_utf8_buffer())
+	put(h, 100, octal(493 if is_dir else 420, 8))  # 0755, 0644
+	put(h, 108, octal(0, 8))
+	put(h, 116, octal(0, 8))
+	put(h, 124, octal(0 if is_dir else data.size(), 12))
+	put(h, 136, octal(0, 12))
+	put(h, 148, "        ".to_ascii_buffer())
+	h[156] = 0x35 if is_dir else 0x30
+	put(h, 257, "ustar".to_ascii_buffer())
+	put(h, 263, "00".to_ascii_buffer())
+	var sum := 0
+	for i in 512:
+		sum += h[i]
+	put(h, 148, octal(sum, 7))
+	h[155] = 0x20
+	if is_dir:
+		return h
+	var body := data.duplicate()
+	while body.size() % 512 != 0:
+		body.append(0)
+	h.append_array(body)
+	return h
+
+
+func importer_meta(guid: String, importer: String, main_id: int) -> String:
+	var s := "fileFormatVersion: 2\nguid: %s\n%s:\n  externalObjects: {}\n" % [guid, importer]
+	if main_id != 0:
+		s += "  mainObjectFileID: %d\n" % main_id
+	return s + "  userData: \n  assetBundleName: \n  assetBundleVariant: \n"
+
+
+# A colour texture's TextureImporter settings, as the editor writes them for a new PNG/JPEG
+# (taken from an editor-written meta in lilToon 2.3.4). The short importer_meta form is not enough
+# here: without textureShape the editor imports the image as a Cubemap, which no _MainTex accepts.
+func texture_meta(guid: String) -> String:
+	var s := "fileFormatVersion: 2\nguid: %s\nTextureImporter:\n" % guid
+	s += "  internalIDToNameTable: []\n  externalObjects: {}\n  serializedVersion: 11\n"
+	s += "  mipmaps:\n    mipMapMode: 0\n    enableMipMap: 1\n    sRGBTexture: 1\n    linearTexture: 0\n"
+	s += "    fadeOut: 0\n    borderMipMap: 0\n    mipMapsPreserveCoverage: 0\n    alphaTestReferenceValue: 0.5\n"
+	s += "    mipMapFadeDistanceStart: 1\n    mipMapFadeDistanceEnd: 3\n"
+	s += "  bumpmap:\n    convertToNormalMap: 0\n    externalNormalMap: 0\n    heightScale: 0.25\n    normalMapFilter: 0\n"
+	s += "  isReadable: 0\n  streamingMipmaps: 1\n  streamingMipmapsPriority: 0\n  vTOnly: 0\n"
+	s += "  ignoreMasterTextureLimit: 0\n  grayScaleToAlpha: 0\n  generateCubemap: 6\n  cubemapConvolution: 0\n"
+	s += "  seamlessCubemap: 0\n  textureFormat: 1\n  maxTextureSize: 2048\n"
+	s += "  textureSettings:\n    serializedVersion: 2\n    filterMode: 1\n    aniso: 1\n    mipBias: 0\n"
+	s += "    wrapU: 0\n    wrapV: 0\n    wrapW: 0\n"
+	s += "  nPOTScale: 1\n  lightmap: 0\n  compressionQuality: 50\n  spriteMode: 0\n  spriteExtrude: 1\n"
+	s += "  spriteMeshType: 1\n  alignment: 0\n  spritePivot: {x: 0.5, y: 0.5}\n  spritePixelsToUnits: 100\n"
+	s += "  spriteBorder: {x: 0, y: 0, z: 0, w: 0}\n  spriteGenerateFallbackPhysicsShape: 1\n  alphaUsage: 1\n"
+	s += "  alphaIsTransparency: 1\n  spriteTessellationDetail: -1\n  textureType: 0\n  textureShape: 1\n"
+	s += "  singleChannelComponent: 0\n  flipbookRows: 1\n  flipbookColumns: 1\n  maxTextureSizeSet: 0\n"
+	s += "  compressionQualitySet: 0\n  textureFormatSet: 0\n  ignorePngGamma: 0\n  applyGammaDecoding: 0\n"
+	s += "  platformSettings:\n"
+	for target in ["DefaultTexturePlatform", "Standalone", "Android"]:
+		s += "  - serializedVersion: 3\n    buildTarget: %s\n    maxTextureSize: 2048\n" % target
+		s += "    resizeAlgorithm: 0\n    textureFormat: -1\n    textureCompression: 1\n    compressionQuality: 50\n"
+		s += "    crunchedCompression: 0\n    allowsAlphaSplitting: 0\n    overridden: 0\n"
+		s += "    androidETC2FallbackOverride: 0\n    forceMaximumCompressionQuality_BC6H_BC7: 0\n"
+	s += "  spritePackingTag: \n  pSDRemoveMatte: 0\n  pSDShowRemoveMatteOption: 0\n"
+	return s + "  userData: \n  assetBundleName: \n  assetBundleVariant: \n"
+
+
+func folder_meta(guid: String) -> String:
+	return ("fileFormatVersion: 2\nguid: %s\nfolderAsset: yes\nDefaultImporter:\n  externalObjects: {}\n"
+		+ "  userData: \n  assetBundleName: \n  assetBundleVariant: \n") % guid
+
+
+func add(tar: PackedByteArray, path: String, data: PackedByteArray, meta: String, folder: bool) -> void:
+	tar.append_array(members(guid_for(path), path, data, meta, folder))
+
+
+# The tar members of one package asset: <guid>/, <guid>/asset (not for a folder), <guid>/asset.meta
+# and <guid>/pathname. tools/liltoon_pack.gd calls this too, with lilToon's own GUIDs.
+func members(g: String, path: String, data: PackedByteArray, meta: String, folder: bool) -> PackedByteArray:
+	var out := tar_member(g + "/", PackedByteArray(), true)
+	if not folder:
+		out.append_array(tar_member(g + "/asset", data, false))
+	out.append_array(tar_member(g + "/asset.meta", meta.to_utf8_buffer(), false))
+	out.append_array(tar_member(g + "/pathname", path.to_utf8_buffer(), false))
+	return out
+
+
+# vrm: a T-posed VRM 1.0. vendored: tar members appended as they are (liltoon.tar from
+# tools/liltoon_pack.gd: lilToon at Assets/lilToon with its own GUIDs), or empty. Returns the
+# Asset package bytes, or nothing with `last_error` set.
+func native_package(vrm: PackedByteArray, name: String, view: Vector3, credits: String,
+		vendored: PackedByteArray) -> PackedByteArray:
+	last_error = ""
+	var gltf := glb_json(vrm)
+	var bin := glb_bin(vrm)
+	if gltf.is_empty() or not gltf.get("extensions", {}).has("VRMC_vrm"):
+		last_error = "not a VRM 1.0"
+		return PackedByteArray()
+	# Godot's exporter gives each skinned mesh its own skin; skins over the same joints count as one
+	# skin here, so every such mesh goes into the one Mesh.
+	var skin_index := -1
+	for node in gltf["nodes"]:
+		if node.has("mesh") and node.has("skin"):
+			var s := int(node["skin"])
+			if skin_index < 0:
+				skin_index = s
+			elif s != skin_index:
+				if gltf["skins"][s]["joints"] != gltf["skins"][skin_index]["joints"]:
+					last_error = "more than one skin"
+					return PackedByteArray()
+				node["skin"] = skin_index
+	if skin_index < 0:
+		last_error = "no skinned mesh"
+		return PackedByteArray()
+	var built := build_nodes(gltf, name, skin_index)
+	var nodes: Array = built[0]
+	var index_of: Dictionary = built[1]
+	var human := {}
+	var bones: Dictionary = gltf["extensions"]["VRMC_vrm"]["humanoid"]["humanBones"]
+	var from_vrm := finger_from_vrm()
+	for b in FROM_VRM:
+		from_vrm[b] = FROM_VRM[b]
+	for b in bones:
+		if from_vrm.has(b):
+			var g := int(bones[b]["node"])
+			if not index_of.has(g):
+				last_error = "the %s bone is not a joint of the skin" % b
+				return PackedByteArray()
+			human[from_vrm[b]] = index_of[g]
+	var mesh := build_mesh(gltf, bin, skin_index, nodes, index_of, built[2])
+	if mesh.is_empty():
+		return PackedByteArray()
+	var materials: Array = mesh["by_material"].keys()
+	materials.sort()
+	var dir := "Assets/" + name
+	var paths := {"mesh": dir + "/" + name + ".mesh.asset", "avatar": dir + "/" + name + ".avatar.asset",
+		"prefab": dir + "/" + name + ".prefab"}
+	var guids := {"mesh": guid_for(paths["mesh"]), "avatar": guid_for(paths["avatar"])}
+	var gmats: Array = gltf.get("materials", [])
+	var mat_paths := {}
+	for m in materials:
+		var mname := str(gmats[m].get("name", "Material%d" % m)) if m < gmats.size() else "Material%d" % m
+		var mpath := dir + "/Materials/" + mname.validate_filename() + ".mat"
+		if mat_paths.values().has(mpath):  # two materials with one name keep separate files
+			mpath = dir + "/Materials/%s_%d.mat" % [mname.validate_filename(), m]
+		mat_paths[m] = mpath
+		guids["mat%d" % m] = guid_for(mat_paths[m])
+	var tar := PackedByteArray()
+	add(tar, dir, PackedByteArray(), folder_meta(guid_for(dir)), true)
+	add(tar, dir + "/Materials", PackedByteArray(), folder_meta(guid_for(dir + "/Materials")), true)
+	# Base colour images, written as the source files (PNG/JPEG) beside the materials.
+	var gtex: Array = gltf.get("textures", [])
+	var gimg: Array = gltf.get("images", [])
+	var tex_of := {}
+	var written := {}
+	for m in materials:
+		var md: Dictionary = gmats[m] if m < gmats.size() else {}
+		var t := int(md.get("pbrMetallicRoughness", {}).get("baseColorTexture", {}).get("index", -1))
+		if t < 0 or t >= gtex.size() or not gtex[t].has("source"):
+			continue
+		var im := int(gtex[t]["source"])
+		if im >= gimg.size() or not gimg[im].has("bufferView"):
+			continue
+		if not written.has(im):
+			var ext := ".jpg" if str(gimg[im].get("mimeType", "")) == "image/jpeg" else ".png"
+			var stem := str(gimg[im].get("name", ""))
+			if stem == "":
+				stem = str(md.get("name", "Texture%d" % im))
+			var tpath := dir + "/Textures/" + stem.validate_filename() + ext
+			var bv: Dictionary = gltf["bufferViews"][int(gimg[im]["bufferView"])]
+			var off := int(bv.get("byteOffset", 0))
+			if written.is_empty():
+				add(tar, dir + "/Textures", PackedByteArray(), folder_meta(guid_for(dir + "/Textures")), true)
+			add(tar, tpath, bin.slice(off, off + int(bv["byteLength"])),
+				texture_meta(guid_for(tpath)), false)
+			written[im] = guid_for(tpath)
+		tex_of[m] = written[im]
+	add(tar, paths["mesh"], mesh_yaml(mesh, name, materials).to_utf8_buffer(),
+		importer_meta(guids["mesh"], "NativeFormatImporter", 4300000), false)
+	add(tar, paths["avatar"], avatar_yaml(nodes, human).to_utf8_buffer(),
+		importer_meta(guids["avatar"], "NativeFormatImporter", 9000000), false)
+	for m in materials:
+		var md: Dictionary = gmats[m] if m < gmats.size() else {}
+		add(tar, mat_paths[m], material_yaml(md, str(tex_of.get(m, ""))).to_utf8_buffer(),
+			importer_meta(guids["mat%d" % m], "NativeFormatImporter", 2100000), false)
+	add(tar, paths["prefab"], prefab_yaml(nodes, mesh, guids, materials, view, index_of).to_utf8_buffer(),
+		importer_meta(guid_for(paths["prefab"]), "PrefabImporter", 0), false)
+	add(tar, dir + "/CREDITS.txt", credits.to_utf8_buffer(),
+		importer_meta(guid_for(dir + "/CREDITS.txt"), "TextScriptImporter", 0), false)
+	tar.append_array(vendored)
+	var end := PackedByteArray()
+	end.resize(1024)
+	tar.append_array(end)
+	return tar.compress(FileAccess.COMPRESSION_GZIP)
+
+# ---- view position --------------------------------------------------------------------------
+
+# The eye point: the head-weighted vertices of every skin, posed at rest; eyes sit 0.55 of the way
+# up their height, on the head's centre line, just behind the front of the face. Source-asset space is
+# glTF's with X mirrored.
+func view_position(vrm: PackedByteArray) -> Vector3:
+	var gltf := glb_json(vrm)
+	var bin := glb_bin(vrm)
+	var head_node: int = int(gltf["extensions"]["VRMC_vrm"]["humanoid"]["humanBones"]["head"]["node"])
+	var g := node_globals(gltf)
+	var lo := Vector3(INF, INF, INF)
+	var hi := Vector3(-INF, -INF, -INF)
+	var found := 0
+	var nodes: Array = gltf["nodes"]
+	for ni in nodes.size():
+		var node: Dictionary = nodes[ni]
+		if not node.has("mesh") or not node.has("skin"):
+			continue
+		var skin: Dictionary = gltf["skins"][int(node["skin"])]
+		var joints: Array = skin["joints"]
+		var slot := joints.find(head_node)
+		if slot < 0:
+			continue
+		var ibm := Transform3D.IDENTITY
+		if skin.has("inverseBindMatrices"):
+			var ia: Dictionary = gltf["accessors"][int(skin["inverseBindMatrices"])]
+			var io: Array = accessor_stride(gltf, ia)
+			var at: int = io[0] + 64 * slot
+			var a := []
+			for k in 16:
+				a.append(bin.decode_float(at + 4 * k))
+			ibm = node_local({"matrix": a})
+		var to_world: Transform3D = g[head_node] * ibm
+		for prim in gltf["meshes"][int(node["mesh"])]["primitives"]:
+			var attrs: Dictionary = prim["attributes"]
+			if not attrs.has("JOINTS_0") or not attrs.has("WEIGHTS_0"):
+				continue
+			var pa: Dictionary = gltf["accessors"][int(attrs["POSITION"])]
+			var ja: Dictionary = gltf["accessors"][int(attrs["JOINTS_0"])]
+			var wa: Dictionary = gltf["accessors"][int(attrs["WEIGHTS_0"])]
+			var po: Array = accessor_stride(gltf, pa)
+			var jo: Array = accessor_stride(gltf, ja)
+			var wo: Array = accessor_stride(gltf, wa)
+			var jt: int = int(ja["componentType"])
+			var wt: int = int(wa["componentType"])
+			var jsize: int = 1 if jt == 5121 else 2
+			var wsize: int = 4 if wt == 5126 else (1 if wt == 5121 else 2)
+			var wscale: float = 1.0 if wt == 5126 else (255.0 if wt == 5121 else 65535.0)
+			for v in int(pa["count"]):
+				var best := -1
+				var best_w := 0.0
+				for k in 4:
+					var w: float = read_component(bin, wo[0] + v * wo[1] + k * wsize, wt) / wscale
+					if w > best_w:
+						best_w = w
+						best = int(read_component(bin, jo[0] + v * jo[1] + k * jsize, jt))
+				if best != slot or best_w < 0.5:
+					continue
+				var at: int = po[0] + v * po[1]
+				var p: Vector3 = to_world * Vector3(bin.decode_float(at), bin.decode_float(at + 4),
+					bin.decode_float(at + 8))
+				lo = lo.min(p)
+				hi = hi.max(p)
+				found += 1
+	if found == 0:
+		var h: Vector3 = g[head_node].origin
+		return Vector3(-h.x, h.y + 0.08, h.z + 0.08)
+	var head_x: float = g[head_node].origin.x
+	return Vector3(-head_x, lo.y + 0.55 * (hi.y - lo.y), hi.z - 0.02)
+
+
+func node_globals(gltf: Dictionary) -> Array:
+	var nodes: Array = gltf["nodes"]
+	var parent := []
+	parent.resize(nodes.size())
+	parent.fill(-1)
+	for i in nodes.size():
+		for c in nodes[i].get("children", []):
+			parent[int(c)] = i
+	var out := []
+	for i in nodes.size():
+		var x := node_local(nodes[i])
+		var p: int = parent[i]
+		while p >= 0:
+			x = node_local(nodes[p]) * x
+			p = parent[p]
+		out.append(x)
+	return out
+
+
+func accessor_stride(gltf: Dictionary, acc: Dictionary) -> Array:
+	var view: Dictionary = gltf["bufferViews"][int(acc["bufferView"])]
+	var comp := {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+	var count := {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+	var elem: int = comp[int(acc["componentType"])] * count[str(acc["type"])]
+	var stride: int = int(view.get("byteStride", elem))
+	return [int(view.get("byteOffset", 0)) + int(acc.get("byteOffset", 0)), stride]
+
+
+func read_component(bin: PackedByteArray, at: int, ctype: int) -> float:
+	match ctype:
+		5126:
+			return bin.decode_float(at)
+		5121:
+			return float(bin.decode_u8(at))
+		5123:
+			return float(bin.decode_u16(at))
+		5125:
+			return float(bin.decode_u32(at))
+	return 0.0

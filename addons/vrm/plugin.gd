@@ -12,7 +12,9 @@ var VRMC_springBone_inst := VRMC_springBone.new()
 const VRMC_materials_mtoon = preload("./1.0/VRMC_materials_mtoon.gd")
 var VRMC_materials_mtoon_inst := VRMC_materials_mtoon.new()
 
-const VRMC_materials_hdr_emissiveMultiplier = preload("./1.0/VRMC_materials_hdr_emissiveMultiplier.gd")
+const VRMC_materials_hdr_emissiveMultiplier = preload(
+	"./1.0/VRMC_materials_hdr_emissiveMultiplier.gd"
+)
 var VRMC_materials_hdr_emissiveMultiplier_inst := VRMC_materials_hdr_emissiveMultiplier.new()
 
 const VRMC_vrm = preload("./1.0/VRMC_vrm.gd")
@@ -77,10 +79,20 @@ func _export_vrm_pressed():
 			node.vrm_meta = vrm_meta_class.new()
 		if not failed_validate.is_empty():
 			var res_path = meta.resource_path.split("::")[0]
-			if not res_path.is_empty() and (not res_path.begins_with("res://") or FileAccess.file_exists(res_path + ".import")):
+			if (
+				not res_path.is_empty()
+				and (
+					not res_path.begins_with("res://")
+					or FileAccess.file_exists(res_path + ".import")
+				)
+			):
 				node.vrm_meta = node.vrm_meta.duplicate(true)
 			get_editor_interface().inspect_object(node.vrm_meta)
-			accept_dialog.dialog_text = "VRM Export requires filling out license dropdowns and basic data:\n" + ",".join(failed_validate) + "\n\nExpand CLICK TO SEE METADATA in the Inspector"
+			accept_dialog.dialog_text = (
+				"VRM Export requires filling out license dropdowns and basic data:\n"
+				+ ",".join(failed_validate)
+				+ "\n\nExpand CLICK TO SEE METADATA in the Inspector"
+			)
 			accept_dialog.ok_button_text = "OK"
 			get_editor_interface().popup_dialog_centered(accept_dialog)
 			selected_nodes.clear()
@@ -137,7 +149,9 @@ func _export_vrm_dialog_action(path: String):
 	# ERROR: Index p_index = 4 is out of bounds ((int)data.children_cache.size() - data.internal_children_front_count_cache - data.internal_children_back_count_cache = 3).
 	# at: Node::get_child (scene\main\node.cpp:1511)
 	remove_internals(root, to_reparent)
-	var new_root: Node = root.duplicate(Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS | Node.DUPLICATE_SCRIPTS)
+	var new_root: Node = root.duplicate(
+		Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS | Node.DUPLICATE_SCRIPTS
+	)
 	for chld in to_reparent:
 		to_reparent[chld].add_child(chld)
 	reassign_owner(new_root, root, new_root)
@@ -152,7 +166,7 @@ func _export_vrm_dialog_action(path: String):
 		secondary.script = vrm_secondary
 
 	var gltf_doc := GLTFDocument.new()
-	gltf_doc.set(&"root_node_mode", 2) # GLTFDocument.ROOT_NODE_MODE_MULTI_ROOT
+	gltf_doc.set(&"root_node_mode", 2)  # GLTFDocument.ROOT_NODE_MODE_MULTI_ROOT
 	var gltf_state := GLTFState.new()
 	gltf_state.set_meta("vrm", "1.0")
 	var flags := EditorSceneFormatImporter.IMPORT_USE_NAMED_SKIN_BINDS

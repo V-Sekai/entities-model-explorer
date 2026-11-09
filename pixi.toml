@@ -1,0 +1,18 @@
+[workspace]
+name = "entities-model-explorer"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[dependencies]
+# elixir/erlang come from conda-forge so `pixi run build` needs no system install or sudo;
+# gh, git, perl, curl, unzip, tar, zip are expected on the host (present on GH runners and WSL).
+erlang = "*"
+elixir = "*"
+
+[tasks]
+# Reproduce the Linux leg of .github/workflows/release.yml locally: fetch the engine + guest ELFs,
+# export the pck, package the Linux build (real --export-release embed_pck), and run the FDB
+# round-trip self-test. Needs an authenticated `gh` (GH_TOKEN or `gh auth login`). Minutes, not
+# the ~5-10 of a CI round trip; `elixir tools/local_build_test.exs --skip-fetch` while iterating
+# on package_desktop.exs so only the pck/package/test steps rerun.
+build = "elixir tools/local_build_test.exs"

@@ -1,0 +1,21 @@
+name: Checks
+
+on:
+  pull_request:
+  merge_group:
+
+# One run per pull request at a time; a new push cancels the run still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  prek:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install prek
+      - run: prek run --all-files --show-diff-on-failure --color always

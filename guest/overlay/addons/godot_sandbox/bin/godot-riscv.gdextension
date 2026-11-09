@@ -1,0 +1,11 @@
+[configuration]
+
+entry_symbol = "riscv_library_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+web.debug.double.wasm32 = "./libgodot_riscv.web.template_release.double.wasm32.wasm"
+web.release.double.wasm32 = "./libgodot_riscv.web.template_release.double.wasm32.wasm"
+# The editor exporting is single precision and skips the double entries; the web template is double.
+web.debug.wasm32 = "./libgodot_riscv.web.template_release.double.wasm32.wasm"
+web.release.wasm32 = "./libgodot_riscv.web.template_release.double.wasm32.wasm"

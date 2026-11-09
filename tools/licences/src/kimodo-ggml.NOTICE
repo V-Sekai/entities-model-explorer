@@ -1,0 +1,7 @@
+kimodo.cpp
+
+This project uses ggml, Copyright the ggml authors:
+https://github.com/ggml-org/ggml
+
+The demo displays the LocalAI logo from the LocalAI project:
+https://github.com/mudler/LocalAI

@@ -107,23 +107,29 @@ func evaluate() -> void:
 func evaluate_aim() -> void:
 	if source_node == null or target_node == null:
 		return
-	var source_global_transform: Transform3D = _get_source_global_transform() # * source_node.get_bone_pose(source_bone).affine_inverse() * Transform3D(source_node.get_bone_rest(source_bone).basis, Vector3())
-	var target_global_transform: Transform3D = _get_target_global_transform() * target_node.get_bone_pose(target_bone).affine_inverse() # * Transform3D(target_node.get_bone_rest(target_bone).basis, Vector3())
-	var target_rest_transform: Transform3D = target_node.get_bone_rest(target_bone) # .basis.get_rotation_quaternion()
+	var source_global_transform: Transform3D = _get_source_global_transform()  # * source_node.get_bone_pose(source_bone).affine_inverse() * Transform3D(source_node.get_bone_rest(source_bone).basis, Vector3())
+	var target_global_transform: Transform3D = (
+		_get_target_global_transform() * target_node.get_bone_pose(target_bone).affine_inverse()
+	)  # * Transform3D(target_node.get_bone_rest(target_bone).basis, Vector3())
+	var target_rest_transform: Transform3D = target_node.get_bone_rest(target_bone)  # .basis.get_rotation_quaternion()
 	# var relative_source_transform: Transform3D = target_rest_transform.affine_inverse() * target_global_transform.affine_inverse() * source_global_transform * source_rest_transform
-	var relative_source_transform: Transform3D = target_global_transform.affine_inverse() * source_global_transform * source_rest_transform
-	var rest_dir: Vector3 = _aim_get_rest_direction(target_rest_transform.basis) # Basis(target_rest_rotation))
+	var relative_source_transform: Transform3D = (
+		target_global_transform.affine_inverse() * source_global_transform * source_rest_transform
+	)
+	var rest_dir: Vector3 = _aim_get_rest_direction(target_rest_transform.basis)  # Basis(target_rest_rotation))
 	#if source_bone_name == 'LeftHand':
 	#	print(relative_source_transform.origin.normalized()) # print(source_node.get_bone_pose(source_bone).origin)
 	#  - target_rest_rotation * target_rest_transform.origin
-	var aim_dir: Vector3 = (relative_source_transform.origin - target_rest_origin).normalized() # target_global_transform.origin.direction_to(source_global_transform.origin)
+	var aim_dir: Vector3 = (relative_source_transform.origin - target_rest_origin).normalized()  # target_global_transform.origin.direction_to(source_global_transform.origin)
 	#if rest_dir.is_zero_approx() or aim_dir.is_zero_approx():
 	#	return
 	var arc := Quaternion(rest_dir, aim_dir).normalized()
 	#if source_bone_name == 'LeftHand':
 	#	print(str(rest_dir)+","+str(aim_dir))#print(arc.get_euler())
 	#_set_weighted_global_target_rotation(arc)
-	target_node.set_bone_pose_rotation(target_bone, target_rest_transform.basis.get_rotation_quaternion() * arc) # * arc) #  * arc)
+	target_node.set_bone_pose_rotation(
+		target_bone, target_rest_transform.basis.get_rotation_quaternion() * arc
+	)  # * arc) #  * arc)
 
 
 func evaluate_roll() -> void:
@@ -273,7 +279,12 @@ func _set_weighted_global_target_rotation(rotation_quat: Quaternion) -> void:
 		return
 	var skeleton: Skeleton3D = target_node as Skeleton3D
 	#rotation_quat = Quaternion(_get_target_global_rest().basis).inverse() * rotation_quat
-	var parent_global_quat = skeleton.get_bone_global_pose(skeleton.get_bone_parent(target_bone)).basis.get_rotation_quaternion()
+	var parent_global_quat = (
+		skeleton
+		. get_bone_global_pose(skeleton.get_bone_parent(target_bone))
+		. basis
+		. get_rotation_quaternion()
+	)
 	rotation_quat = target_rest_rotation * parent_global_quat.inverse() * rotation_quat
 	skeleton.set_bone_pose_rotation(target_bone, rotation_quat)
 

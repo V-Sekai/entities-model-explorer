@@ -1,12 +1,11 @@
 [gd_scene format=3 uid="uid://dvpfndtt8epxg"]
 
 [ext_resource type="Script" uid="uid://dpcclf00w64kc" path="res://vsk_model_explorer/core/ModelExplorer.gd" id="1_nw81i"]
-[ext_resource type="Shader" uid="uid://bfps158jgiepd" path="res://vsk_model_explorer/shader/Grid.gdshader" id="2_c212q"]
+[ext_resource type="Script" path="res://vsk_model_explorer/core/GridBalls.gd" id="2_c212q"]
 [ext_resource type="Script" uid="uid://wh6b347iy00j" path="res://vsk_model_explorer/core/CamController.gd" id="3_7quse"]
 [ext_resource type="Script" uid="uid://2xw6ahdkwk3r" path="res://vsk_model_explorer/core/UIController.gd" id="4_3e4pv"]
 [ext_resource type="Texture2D" uid="uid://dngs678q2vwu2" path="res://vsk_model_explorer/texture/T_ProgressCircle_BG.png" id="5_ki67k"]
 [ext_resource type="Texture2D" uid="uid://ciy2pu22x0j1w" path="res://vsk_model_explorer/texture/T_ProgressCircle_FG.png" id="6_18sj1"]
-[ext_resource type="Theme" uid="uid://3n58c5iseefm" path="res://vsk_model_explorer/resource/Theme.theme" id="6_ee8my"]
 [ext_resource type="Script" uid="uid://gv60fo01hmj2" path="res://vsk_model_explorer/core/ProgressIndicator.gd" id="7_mw4jw"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_je8ca"]
@@ -26,14 +25,6 @@ sky = SubResource("Sky_h8kkh")
 auto_exposure_enabled = true
 auto_exposure_min_exposure_value = -4.0
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_k3w7f"]
-render_priority = 0
-shader = ExtResource("2_c212q")
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_6snqc"]
-material = SubResource("ShaderMaterial_k3w7f")
-size = Vector2(10000, 10000)
-
 [sub_resource type="CameraAttributesPhysical" id="CameraAttributesPhysical_6umus"]
 auto_exposure_enabled = true
 
@@ -47,8 +38,8 @@ script = ExtResource("1_nw81i")
 environment = SubResource("Environment_5wpq0")
 camera_attributes = SubResource("CameraAttributesPhysical_4a23n")
 
-[node name="GizmoPlane" type="MeshInstance3D" parent="." unique_id=1191691593]
-mesh = SubResource("PlaneMesh_6snqc")
+[node name="GizmoPlane" type="MultiMeshInstance3D" parent="." unique_id=1191691593]
+script = ExtResource("2_c212q")
 
 [node name="CamController" type="Node3D" parent="." unique_id=557862534 node_paths=PackedStringArray("UiNode")]
 script = ExtResource("3_7quse")
@@ -64,16 +55,19 @@ attributes = SubResource("CameraAttributesPhysical_6umus")
 transform = Transform3D(0.85798, -0.214782, 0.466625, -0.00966859, 0.901478, 0.432717, -0.513591, -0.375774, 0.771374, 4.30535, 3.06095, 0)
 shadow_enabled = true
 
-[node name="Node" type="Node" parent="." unique_id=35495315]
+[node name="Node" type="Node" parent="." unique_id=35495315 node_paths=PackedStringArray("Grid")]
 script = ExtResource("4_3e4pv")
+Grid = NodePath("../GizmoPlane")
 
 [node name="InfoPanel" type="PanelContainer" parent="Node" unique_id=399172890]
 visible = false
 anchors_preset = 9
 anchor_bottom = 1.0
-offset_right = 300.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 316.0
+offset_bottom = -16.0
 grow_vertical = 2
-theme = ExtResource("6_ee8my")
 
 [node name="MarginContainer" type="MarginContainer" parent="Node/InfoPanel" unique_id=961399275]
 layout_mode = 2
@@ -130,42 +124,6 @@ layout_mode = 2
 size_flags_horizontal = 4
 text = "Loading..."
 
-[node name="ToolPanel" type="PanelContainer" parent="Node" unique_id=2114674250]
-visible = false
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -143.0
-offset_bottom = 93.0
-grow_horizontal = 0
-
-[node name="MarginContainer" type="MarginContainer" parent="Node/ToolPanel" unique_id=1666635319]
-layout_mode = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 16
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 16
-
-[node name="Row" type="VBoxContainer" parent="Node/ToolPanel/MarginContainer" unique_id=744968282]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="Node/ToolPanel/MarginContainer/Row" unique_id=223676777]
-layout_mode = 2
-text = "Tool"
-
-[node name="CbWireframe" type="CheckBox" parent="Node/ToolPanel/MarginContainer/Row" unique_id=351218458]
-layout_mode = 2
-text = "Wireframe (W)"
-
-[node name="CbExplode" type="CheckBox" parent="Node/ToolPanel/MarginContainer/Row" unique_id=1532844001]
-layout_mode = 2
-tooltip_text = "Move all meshes away from the center to easily check how may meshes are there"
-text = "Explode (E)"
-
-[node name="CbHideGrid" type="CheckBox" parent="Node/ToolPanel/MarginContainer/Row" unique_id=748838344]
-layout_mode = 2
-text = "Hide Grid (G)"
-
 [node name="MessagePanel" type="PanelContainer" parent="Node" unique_id=205190248]
 anchors_preset = 8
 anchor_left = 0.5
@@ -197,6 +155,3 @@ text = "Drop 3d model into this window"
 [connection signal="gltf_is_loaded" from="." to="CamController" method="_on_root_gltf_is_loaded"]
 [connection signal="gltf_is_loaded" from="." to="Node" method="_on_root_gltf_is_loaded"]
 [connection signal="gltf_start_to_load" from="." to="Node" method="_on_root_gltf_start_to_load"]
-[connection signal="toggled" from="Node/ToolPanel/MarginContainer/Row/CbWireframe" to="Node" method="_on_cb_wireframe_toggled"]
-[connection signal="toggled" from="Node/ToolPanel/MarginContainer/Row/CbExplode" to="Node" method="_on_cb_explode_toggled"]
-[connection signal="toggled" from="Node/ToolPanel/MarginContainer/Row/CbHideGrid" to="Node" method="_on_cb_hide_grid_toggled"]

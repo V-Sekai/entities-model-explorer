@@ -1,6 +1,5 @@
-[gd_scene load_steps=3 format=3 uid="uid://mfb5ci7jsk38"]
+[gd_scene load_steps=2 format=3 uid="uid://mfb5ci7jsk38"]
 
-[ext_resource type="Theme" uid="uid://3n58c5iseefm" path="res://vsk_model_explorer/resource/Theme.theme" id="1_p67p2"]
 [ext_resource type="Script" path="res://vsk_model_explorer/core/MaterialViewer.gd" id="2_h4h4s"]
 
 [node name="MaterialViewer" type="PanelContainer"]
@@ -8,7 +7,6 @@ offset_left = 314.0
 offset_top = 772.0
 offset_right = 687.0
 offset_bottom = 1245.0
-theme = ExtResource("1_p67p2")
 script = ExtResource("2_h4h4s")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]

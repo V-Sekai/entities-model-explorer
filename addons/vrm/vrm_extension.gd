@@ -68,7 +68,9 @@ func _process_khr_material(orig_mat: StandardMaterial3D, gltf_mat_props: Diction
 	return orig_mat
 
 
-func _vrm_get_texture_info(gstate: GLTFState, vrm_mat_props: Dictionary, unity_tex_name: String) -> Dictionary:
+func _vrm_get_texture_info(
+	gstate: GLTFState, vrm_mat_props: Dictionary, unity_tex_name: String
+) -> Dictionary:
 	var gltf_images: Array = gstate.get_images()
 	var gltf_textures: Array = gstate.get_textures()
 	var texture_info: Dictionary = {}
@@ -91,7 +93,9 @@ func _vrm_get_float(vrm_mat_props: Dictionary, key: String, def: float) -> float
 	return vrm_mat_props["floatProperties"].get(key, def)
 
 
-func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props: Dictionary) -> Material:
+func _process_vrm_material(
+	orig_mat: Material, gstate: GLTFState, vrm_mat_props: Dictionary
+) -> Material:
 	var gltf_images: Array = gstate.get_images()
 	var gltf_textures: Array = gstate.get_textures()
 
@@ -100,12 +104,24 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 		return orig_mat  # It's already correct!
 
 	if vrm_shader_name == "Standard" or vrm_shader_name == "UniGLTF/UniUnlit":
-		push_error("Unsupported legacy VRM shader " + vrm_shader_name + " on material " + str(orig_mat.resource_name))
+		push_error(
+			(
+				"Unsupported legacy VRM shader "
+				+ vrm_shader_name
+				+ " on material "
+				+ str(orig_mat.resource_name)
+			)
+		)
 		return orig_mat
 
 	var maintex_info: Dictionary = _vrm_get_texture_info(gstate, vrm_mat_props, "_MainTex")
 
-	if vrm_shader_name == "VRM/UnlitTransparentZWrite" or vrm_shader_name == "VRM/UnlitTransparent" or vrm_shader_name == "VRM/UnlitTexture" or vrm_shader_name == "VRM/UnlitCutout":
+	if (
+		vrm_shader_name == "VRM/UnlitTransparentZWrite"
+		or vrm_shader_name == "VRM/UnlitTransparent"
+		or vrm_shader_name == "VRM/UnlitTexture"
+		or vrm_shader_name == "VRM/UnlitCutout"
+	):
 		if maintex_info["tex"] != null:
 			orig_mat.albedo_texture = maintex_info["tex"]
 			orig_mat.uv1_offset = maintex_info["offset"]
@@ -114,7 +130,10 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 		if vrm_shader_name == "VRM/UnlitTransparentZWrite":
 			orig_mat.depth_draw_mode = StandardMaterial3D.DEPTH_DRAW_ALWAYS
 		orig_mat.no_depth_test = false
-		if vrm_shader_name == "VRM/UnlitTransparent" or vrm_shader_name == "VRM/UnlitTransparentZWrite":
+		if (
+			vrm_shader_name == "VRM/UnlitTransparent"
+			or vrm_shader_name == "VRM/UnlitTransparentZWrite"
+		):
 			orig_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			orig_mat.blend_mode = StandardMaterial3D.BLEND_MODE_MIX
 		if vrm_shader_name == "VRM/UnlitCutout":
@@ -123,7 +142,9 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 		return orig_mat
 
 	if vrm_shader_name != "VRM/MToon":
-		push_error("Unknown VRM shader " + vrm_shader_name + " on material " + str(orig_mat.resource_name))
+		push_error(
+			"Unknown VRM shader " + vrm_shader_name + " on material " + str(orig_mat.resource_name)
+		)
 		return orig_mat
 
 	# Enum(Off,0,Front,1,Back,2) _CullMode
@@ -132,8 +153,23 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 	var blend_mode = int(vrm_mat_props["floatProperties"].get("_BlendMode", 0))
 	var cull_mode = int(vrm_mat_props["floatProperties"].get("_CullMode", 2))
 	var outl_cull_mode = int(vrm_mat_props["floatProperties"].get("_OutlineCullMode", 1))
-	if cull_mode == int(CullMode.Front) || (outl_cull_mode != int(CullMode.Front) && outline_width_mode != int(OutlineWidthMode.None)):
-		push_error("VRM Material " + str(orig_mat.resource_name) + " has unsupported front-face culling mode: " + str(cull_mode) + "/" + str(outl_cull_mode))
+	if (
+		cull_mode == int(CullMode.Front)
+		|| (
+			outl_cull_mode != int(CullMode.Front)
+			&& outline_width_mode != int(OutlineWidthMode.None)
+		)
+	):
+		push_error(
+			(
+				"VRM Material "
+				+ str(orig_mat.resource_name)
+				+ " has unsupported front-face culling mode: "
+				+ str(cull_mode)
+				+ "/"
+				+ str(outl_cull_mode)
+			)
+		)
 
 	var mtoon_shader_base_path = "res://addons/Godot-MToon-Shader/mtoon"
 
@@ -181,12 +217,26 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 		outline_mat.shader = godot_shader_outline
 		new_mat.next_pass = outline_mat
 
-	var texture_repeat = Vector4(maintex_info["scale"].x, maintex_info["scale"].y, maintex_info["offset"].x, maintex_info["offset"].y)
+	var texture_repeat = Vector4(
+		maintex_info["scale"].x,
+		maintex_info["scale"].y,
+		maintex_info["offset"].x,
+		maintex_info["offset"].y
+	)
 	new_mat.set_shader_parameter("_MainTex_ST", texture_repeat)
 	if outline_mat != null:
 		outline_mat.set_shader_parameter("_MainTex_ST", texture_repeat)
 
-	for param_name in ["_MainTex", "_ShadeTexture", "_BumpMap", "_RimTexture", "_SphereAdd", "_EmissionMap", "_OutlineWidthTexture", "_UvAnimMaskTexture"]:
+	for param_name in [
+		"_MainTex",
+		"_ShadeTexture",
+		"_BumpMap",
+		"_RimTexture",
+		"_SphereAdd",
+		"_EmissionMap",
+		"_OutlineWidthTexture",
+		"_UvAnimMaskTexture"
+	]:
 		var tex_info: Dictionary = _vrm_get_texture_info(gstate, vrm_mat_props, param_name)
 		if tex_info.get("tex", null) != null:
 			new_mat.set_shader_parameter(param_name, tex_info["tex"])
@@ -201,7 +251,9 @@ func _process_vrm_material(orig_mat: Material, gstate: GLTFState, vrm_mat_props:
 	for param_name in vrm_mat_props["floatProperties"]:
 		new_mat.set_shader_parameter(param_name, vrm_mat_props["floatProperties"][param_name])
 		if outline_mat != null:
-			outline_mat.set_shader_parameter(param_name, vrm_mat_props["floatProperties"][param_name])
+			outline_mat.set_shader_parameter(
+				param_name, vrm_mat_props["floatProperties"][param_name]
+			)
 
 	for param_name in ["_Color", "_ShadeColor", "_RimColor", "_EmissionColor", "_OutlineColor"]:
 		if param_name in vrm_mat_props["vectorProperties"]:
@@ -289,7 +341,10 @@ func _update_materials(vrm_extension: Dictionary, gstate: GLTFState) -> void:
 				newmat.render_priority = target_render_priority
 		else:
 			var blend_mode = int(vrm_mat_props["floatProperties"].get("_BlendMode", 0))
-			if blend_mode == int(RenderMode.Transparent) or blend_mode == int(RenderMode.TransparentWithZWrite):
+			if (
+				blend_mode == int(RenderMode.Transparent)
+				or blend_mode == int(RenderMode.TransparentWithZWrite)
+			):
 				newmat.render_priority = target_render_priority
 		materials[i] = newmat
 		var oldpath = oldmat.resource_path
@@ -309,7 +364,17 @@ func _update_materials(vrm_extension: Dictionary, gstate: GLTFState) -> void:
 			if spatial_to_shader_mat.has(surfmat):
 				mesh.set_surface_material(surf_idx, spatial_to_shader_mat[surfmat])
 			else:
-				push_error("Mesh " + str(i) + " material " + str(surf_idx) + " name " + str(surfmat.resource_name) + " has no replacement material.")
+				push_error(
+					(
+						"Mesh "
+						+ str(i)
+						+ " material "
+						+ str(surf_idx)
+						+ " name "
+						+ str(surfmat.resource_name)
+						+ " has no replacement material."
+					)
+				)
 
 
 func _get_skel_godot_node(gstate: GLTFState, nodes: Array, skeletons: Array, skel_id: int) -> Node:
@@ -326,7 +391,9 @@ func _get_skel_godot_node(gstate: GLTFState, nodes: Array, skeletons: Array, ske
 	return null
 
 
-func _first_person_head_hiding(vrm_extension: Dictionary, gstate: GLTFState, human_bone_to_idx: Dictionary):
+func _first_person_head_hiding(
+	vrm_extension: Dictionary, gstate: GLTFState, human_bone_to_idx: Dictionary
+):
 	var firstperson = vrm_extension.get("firstPerson", null)
 
 	var nodes := gstate.get_nodes()
@@ -343,13 +410,17 @@ func _first_person_head_hiding(vrm_extension: Dictionary, gstate: GLTFState, hum
 	var mesh_annotations_by_mesh = {}
 	for meshannotation in firstperson.get("meshAnnotations", []):
 		var s: String = meshannotation.get("firstPersonFlag", "Auto")
-		mesh_annotations_by_mesh[int(meshannotation["mesh"])] = s.substr(0, 1).to_lower() + s.substr(1)
+		mesh_annotations_by_mesh[int(meshannotation["mesh"])] = (
+			s.substr(0, 1).to_lower() + s.substr(1)
+		)
 	var mesh_annotations_by_node = {}
 	for node_idx in range(len(nodes)):
 		if nodes[node_idx].mesh != -1 and mesh_annotations_by_mesh.has(nodes[node_idx].mesh):
 			mesh_annotations_by_node[node_idx] = mesh_annotations_by_mesh[nodes[node_idx].mesh]
 
-	vrm_utils.perform_head_hiding(gstate, mesh_annotations_by_node, head_relative_bones, node_to_head_hidden_node)
+	vrm_utils.perform_head_hiding(
+		gstate, mesh_annotations_by_node, head_relative_bones, node_to_head_hidden_node
+	)
 
 
 # https://github.com/vrm-c/vrm-specification/blob/master/specification/0.0/schema/vrm.humanoid.bone.schema.json
@@ -369,7 +440,16 @@ func _first_person_head_hiding(vrm_extension: Dictionary, gstate: GLTFState, hum
 # "rightLittleProximal","rightLittleIntermediate","rightLittleDistal", "upperChest"]
 
 
-func _create_meta(root_node: Node, animplayer: AnimationPlayer, vrm_extension: Dictionary, gstate: GLTFState, skeleton: Skeleton3D, humanBones: BoneMap, human_bone_to_idx: Dictionary, pose_diffs: Array[Basis]) -> Resource:
+func _create_meta(
+	root_node: Node,
+	animplayer: AnimationPlayer,
+	vrm_extension: Dictionary,
+	gstate: GLTFState,
+	skeleton: Skeleton3D,
+	humanBones: BoneMap,
+	human_bone_to_idx: Dictionary,
+	pose_diffs: Array[Basis]
+) -> Resource:
 	var nodes = gstate.get_nodes()
 
 	var firstperson = vrm_extension.get("firstPerson", null)
@@ -467,7 +547,13 @@ const vrm0_to_vrm1_presets: Dictionary = {
 }
 
 
-func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictionary, gstate: GLTFState, human_bone_to_idx: Dictionary, pose_diffs: Array[Basis]) -> AnimationPlayer:
+func _create_animation_player(
+	animplayer: AnimationPlayer,
+	vrm_extension: Dictionary,
+	gstate: GLTFState,
+	human_bone_to_idx: Dictionary,
+	pose_diffs: Array[Basis]
+) -> AnimationPlayer:
 	# Remove all glTF animation players for safety.
 	# VRM does not support animation import in this way.
 	for i in range(gstate.get_animation_players_count(0)):
@@ -485,7 +571,9 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 	for i in range(meshes.size()):
 		var gltfmesh: GLTFMesh = meshes[i]
 		for j in range(gltfmesh.mesh.get_surface_count()):
-			material_name_to_mesh_and_surface_idx[gltfmesh.mesh.get_surface_material(j).resource_name] = [i, j]
+			material_name_to_mesh_and_surface_idx[gltfmesh.mesh.get_surface_material(j).resource_name] = [
+				i, j
+			]
 
 	for i in range(nodes.size()):
 		var gltfnode: GLTFNode = nodes[i]
@@ -524,41 +612,129 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 					if len(tv) >= 4:
 						newvalue = Color(tv[0], tv[1], tv[2], tv[3])
 					else:
-						push_error("Expected 4 values but got " + str(len(tv)) + " for parameter " + matbind["propertyName"] + " surface " + node.name + "/" + str(surface_idx))
-						newvalue = origvalue # Filler value for consistency.
-				elif matbind["propertyName"] == "_MainTex" or matbind["propertyName"] == "_MainTex_ST":
+						push_error(
+							(
+								"Expected 4 values but got "
+								+ str(len(tv))
+								+ " for parameter "
+								+ matbind["propertyName"]
+								+ " surface "
+								+ node.name
+								+ "/"
+								+ str(surface_idx)
+							)
+						)
+						newvalue = origvalue  # Filler value for consistency.
+				elif (
+					matbind["propertyName"] == "_MainTex"
+					or matbind["propertyName"] == "_MainTex_ST"
+				):
 					origvalue = param
 					if len(tv) >= 4:
-						newvalue = (Vector4(tv[2], tv[3], tv[0], tv[1]) if matbind["propertyName"] == "_MainTex" else Vector4(tv[0], tv[1], tv[2], tv[3]))
+						newvalue = (
+							Vector4(tv[2], tv[3], tv[0], tv[1])
+							if matbind["propertyName"] == "_MainTex"
+							else Vector4(tv[0], tv[1], tv[2], tv[3])
+						)
 					else:
-						push_error("Expected 4 values but got " + str(len(tv)) + " for parameter " + matbind["propertyName"] + " surface " + node.name + "/" + str(surface_idx))
-						newvalue = origvalue # Filler value for consistency.
+						push_error(
+							(
+								"Expected 4 values but got "
+								+ str(len(tv))
+								+ " for parameter "
+								+ matbind["propertyName"]
+								+ " surface "
+								+ node.name
+								+ "/"
+								+ str(surface_idx)
+							)
+						)
+						newvalue = origvalue  # Filler value for consistency.
 				elif param is float:
 					origvalue = param
 					newvalue = tv[0]
 				else:
-					push_error("Unknown type for parameter " + matbind["propertyName"] + " surface " + node.name + "/" + str(surface_idx))
+					push_error(
+						(
+							"Unknown type for parameter "
+							+ matbind["propertyName"]
+							+ " surface "
+							+ node.name
+							+ "/"
+							+ str(surface_idx)
+						)
+					)
 
 			if origvalue != null:
 				var animtrack: int = anim.add_track(Animation.TYPE_VALUE)
-				anim.track_set_path(animtrack, str(animplayer.get_parent().get_path_to(node)) + ":mesh:surface_" + str(surface_idx) + "/material:" + paramprop)
-				anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_NEAREST if bool(shape["isBinary"]) else Animation.INTERPOLATION_LINEAR)
+				anim.track_set_path(
+					animtrack,
+					(
+						str(animplayer.get_parent().get_path_to(node))
+						+ ":mesh:surface_"
+						+ str(surface_idx)
+						+ "/material:"
+						+ paramprop
+					)
+				)
+				anim.track_set_interpolation_type(
+					animtrack,
+					(
+						Animation.INTERPOLATION_NEAREST
+						if bool(shape["isBinary"])
+						else Animation.INTERPOLATION_LINEAR
+					)
+				)
 				anim.track_insert_key(animtrack, 0.0, newvalue)
 				animtrack = reset_anim.add_track(Animation.TYPE_VALUE)
-				reset_anim.track_set_path(animtrack, str(animplayer.get_parent().get_path_to(node)) + ":mesh:surface_" + str(surface_idx) + "/material:" + paramprop)
-				reset_anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_NEAREST if bool(shape["isBinary"]) else Animation.INTERPOLATION_LINEAR)
+				reset_anim.track_set_path(
+					animtrack,
+					(
+						str(animplayer.get_parent().get_path_to(node))
+						+ ":mesh:surface_"
+						+ str(surface_idx)
+						+ "/material:"
+						+ paramprop
+					)
+				)
+				reset_anim.track_set_interpolation_type(
+					animtrack,
+					(
+						Animation.INTERPOLATION_NEAREST
+						if bool(shape["isBinary"])
+						else Animation.INTERPOLATION_LINEAR
+					)
+				)
 				reset_anim.track_insert_key(animtrack, 0.0, origvalue)
 		for bind in shape["binds"]:
 			# FIXME: Is this a mesh_idx or a node_idx???
 			var node: ImporterMeshInstance3D = mesh_idx_to_meshinstance[int(bind["mesh"])]
 			var nodeMesh: ImporterMesh = node.mesh
 
-			if nodeMesh == null || bind["index"] < 0 || bind["index"] >= nodeMesh.get_blend_shape_count():
-				push_error("Invalid blend shape index in bind " + str(shape) + " for mesh " + str(node.name))
+			if (
+				nodeMesh == null
+				|| bind["index"] < 0
+				|| bind["index"] >= nodeMesh.get_blend_shape_count()
+			):
+				push_error(
+					(
+						"Invalid blend shape index in bind "
+						+ str(shape)
+						+ " for mesh "
+						+ str(node.name)
+					)
+				)
 				continue
 			var animtrack: int = anim.add_track(Animation.TYPE_BLEND_SHAPE)
 			# nodeMesh.set_blend_shape_name(int(bind["index"]), shape["name"] + "_" + str(bind["index"]))
-			anim.track_set_path(animtrack, str(animplayer.get_parent().get_path_to(node)) + ":" + str(nodeMesh.get_blend_shape_name(int(bind["index"]))))
+			anim.track_set_path(
+				animtrack,
+				(
+					str(animplayer.get_parent().get_path_to(node))
+					+ ":"
+					+ str(nodeMesh.get_blend_shape_name(int(bind["index"])))
+				)
+			)
 			var interpolation: int = Animation.INTERPOLATION_LINEAR
 			if shape.has("isBinary") and bool(shape["isBinary"]):
 				interpolation = Animation.INTERPOLATION_NEAREST
@@ -568,7 +744,14 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 			anim.track_insert_key(animtrack, 0.0, 0.99999 * float(bind["weight"]) / 100.0)
 			animtrack = reset_anim.add_track(Animation.TYPE_BLEND_SHAPE)
 			# nodeMesh.set_blend_shape_name(int(bind["index"]), shape["name"] + "_" + str(bind["index"]))
-			reset_anim.track_set_path(animtrack, str(animplayer.get_parent().get_path_to(node)) + ":" + str(nodeMesh.get_blend_shape_name(int(bind["index"]))))
+			reset_anim.track_set_path(
+				animtrack,
+				(
+					str(animplayer.get_parent().get_path_to(node))
+					+ ":"
+					+ str(nodeMesh.get_blend_shape_name(int(bind["index"])))
+				)
+			)
 			reset_anim.track_insert_key(animtrack, 0.0, float(0.0))
 			#var mesh:ArrayMesh = meshes[bind["mesh"]].mesh
 			#print("Mesh name: " + mesh.resource_name)
@@ -579,8 +762,13 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 		if vrm0_to_vrm1_presets.has(shape["presetName"]):
 			anim.resource_name = vrm0_to_vrm1_presets[shape["presetName"]]
 			if shape["presetName"].begins_with("look"):
-				animation_library.add_animation(vrm0_to_vrm1_presets[shape["presetName"]] + "Raw", anim)
-			if firstperson.get("lookAtTypeName", "") != "Bone" or not shape["presetName"].begins_with("look"):
+				animation_library.add_animation(
+					vrm0_to_vrm1_presets[shape["presetName"]] + "Raw", anim
+				)
+			if (
+				firstperson.get("lookAtTypeName", "") != "Bone"
+				or not shape["presetName"].begins_with("look")
+			):
 				animation_library.add_animation(vrm0_to_vrm1_presets[shape["presetName"]], anim)
 		else:
 			if shape["presetName"] == "unknown":
@@ -603,14 +791,22 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 		var rightEyePath: String = ""
 		if lefteye > 0:
 			var leftEyeNode: GLTFNode = nodes[lefteye]
-			var skeleton: Skeleton3D = _get_skel_godot_node(gstate, nodes, skeletons, leftEyeNode.skeleton)
+			var skeleton: Skeleton3D = _get_skel_godot_node(
+				gstate, nodes, skeletons, leftEyeNode.skeleton
+			)
 			var skeletonPath: NodePath = animplayer.get_parent().get_path_to(skeleton)
-			leftEyePath = (str(skeletonPath) + ":" + nodes[human_bone_to_idx["leftEye"]].resource_name)
+			leftEyePath = (
+				str(skeletonPath) + ":" + nodes[human_bone_to_idx["leftEye"]].resource_name
+			)
 		if righteye > 0:
 			var rightEyeNode: GLTFNode = nodes[righteye]
-			var skeleton: Skeleton3D = _get_skel_godot_node(gstate, nodes, skeletons, rightEyeNode.skeleton)
+			var skeleton: Skeleton3D = _get_skel_godot_node(
+				gstate, nodes, skeletons, rightEyeNode.skeleton
+			)
 			var skeletonPath: NodePath = animplayer.get_parent().get_path_to(skeleton)
-			rightEyePath = (str(skeletonPath) + ":" + nodes[human_bone_to_idx["rightEye"]].resource_name)
+			rightEyePath = (
+				str(skeletonPath) + ":" + nodes[human_bone_to_idx["rightEye"]].resource_name
+			)
 
 		if lefteye > 0 and righteye > 0:
 			var animtrack: int = reset_anim.add_track(Animation.TYPE_ROTATION_3D)
@@ -630,11 +826,31 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 			var animtrack: int = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, leftEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, horizout["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(0, 0, 1), -horizout["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				horizout["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(0, 0, 1), -horizout["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 			animtrack = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, rightEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, horizin["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(0, 0, 1), -horizin["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				horizin["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(0, 0, 1), -horizin["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 
 		if not animplayer.has_animation("lookRight"):
 			anim = Animation.new()
@@ -645,11 +861,31 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 			var animtrack: int = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, leftEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, horizin["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(0, 0, 1), horizin["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				horizin["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(0, 0, 1), horizin["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 			animtrack = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, rightEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, horizout["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(0, 0, 1), horizout["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				horizout["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(0, 0, 1), horizout["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 
 		if not animplayer.has_animation("lookUp"):
 			anim = Animation.new()
@@ -660,11 +896,31 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 			var animtrack: int = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, leftEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, vertup["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(1, 0, 0), -vertup["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				vertup["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(1, 0, 0), -vertup["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 			animtrack = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, rightEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, vertup["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(1, 0, 0), -vertup["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				vertup["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(1, 0, 0), -vertup["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 
 		if not animplayer.has_animation("lookDown"):
 			anim = Animation.new()
@@ -675,18 +931,44 @@ func _create_animation_player(animplayer: AnimationPlayer, vrm_extension: Dictio
 			var animtrack: int = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, leftEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, vertdown["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(1, 0, 0), vertdown["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				vertdown["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(1, 0, 0), vertdown["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 			animtrack = anim.add_track(Animation.TYPE_ROTATION_3D)
 			anim.track_set_path(animtrack, rightEyePath)
 			anim.track_set_interpolation_type(animtrack, Animation.INTERPOLATION_LINEAR)
-			anim.rotation_track_insert_key(animtrack, vertdown["xRange"] / 90.0, eye_bone_horizontal * (Basis(Vector3(1, 0, 0), vertdown["yRange"] * PI / 180.0)).get_rotation_quaternion())
+			anim.rotation_track_insert_key(
+				animtrack,
+				vertdown["xRange"] / 90.0,
+				(
+					eye_bone_horizontal
+					* (
+						(Basis(Vector3(1, 0, 0), vertdown["yRange"] * PI / 180.0))
+						. get_rotation_quaternion()
+					)
+				)
+			)
 
 	animation_library.add_animation("RESET", reset_anim)
 	animplayer.add_animation_library("", animation_library)
 	return animplayer
 
 
-func _create_joints_recursive(joint_chains: Array[PackedStringArray], skeleton: Skeleton3D, bone_idx: int, level: int, current_chain: int):
+func _create_joints_recursive(
+	joint_chains: Array[PackedStringArray],
+	skeleton: Skeleton3D,
+	bone_idx: int,
+	level: int,
+	current_chain: int
+):
 	if current_chain == -1:  # ALWAYS do this?! # and level > 0:
 		current_chain = len(joint_chains)
 		joint_chains.push_back(PackedStringArray())
@@ -700,17 +982,27 @@ func _create_joints_recursive(joint_chains: Array[PackedStringArray], skeleton: 
 		for i in range(len(bone_children)):
 			var child_bone: int = bone_children[i]
 			if i == 0:
-				_create_joints_recursive(joint_chains, skeleton, child_bone, level + 1, current_chain)
+				_create_joints_recursive(
+					joint_chains, skeleton, child_bone, level + 1, current_chain
+				)
 			else:
 				_create_joints_recursive(joint_chains, skeleton, child_bone, 0, -1)
 
 
-func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gstate: GLTFState, pose_diffs: Array[Basis], is_vrm_0: bool) -> void:
+func _parse_secondary_node(
+	secondary_node: Node,
+	vrm_extension: Dictionary,
+	gstate: GLTFState,
+	pose_diffs: Array[Basis],
+	is_vrm_0: bool
+) -> void:
 	var nodes = gstate.get_nodes()
 	var skeletons = gstate.get_skeletons()
 
 	# Assume that all SpringBone are part of one skeleton for now.
-	var skeleton_path: NodePath = secondary_node.get_path_to(secondary_node.get_parent().get_node("%GeneralSkeleton"))
+	var skeleton_path: NodePath = secondary_node.get_path_to(
+		secondary_node.get_parent().get_node("%GeneralSkeleton")
+	)
 
 	var offset_flip: Vector3 = Vector3(-1, 1, 1) if is_vrm_0 else Vector3(1, 1, 1)
 
@@ -728,7 +1020,9 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 			bone = ""
 			new_resource_name = found_node.name
 		else:
-			var skeleton: Skeleton3D = _get_skel_godot_node(gstate, nodes, skeletons, gltfnode.skeleton)
+			var skeleton: Skeleton3D = _get_skel_godot_node(
+				gstate, nodes, skeletons, gltfnode.skeleton
+			)
 			bone = nodes[int(cgroup["node"])].resource_name
 			new_resource_name = bone
 			pose_diff = pose_diffs[skeleton.find_bone(bone)]
@@ -739,7 +1033,9 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 			collider.bone = bone
 			collider.resource_name = new_resource_name
 			var offset_obj = collider_info.get("offset", {"x": 0.0, "y": 0.0, "z": 0.0})
-			var offset_vec = offset_flip * Vector3(offset_obj["x"], offset_obj["y"], offset_obj["z"])
+			var offset_vec = (
+				offset_flip * Vector3(offset_obj["x"], offset_obj["y"], offset_obj["z"])
+			)
 			# beware that quat * vec * vec multiplication is not associative
 			var local_pos: Vector3 = pose_diff * offset_vec
 			var radius: float = collider_info.get("radius", 0.0)
@@ -759,12 +1055,21 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 		var skeleton: Skeleton3D = _get_skel_godot_node(gstate, nodes, skeletons, gltfnode.skeleton)
 
 		if skeleton_path != secondary_node.get_path_to(skeleton):
-			push_error("boneGroups somehow references a different skeleton... " + str(skeleton_path) + " vs " + str(secondary_node.get_path_to(skeleton)))
+			push_error(
+				(
+					"boneGroups somehow references a different skeleton... "
+					+ str(skeleton_path)
+					+ " vs "
+					+ str(secondary_node.get_path_to(skeleton))
+				)
+			)
 		var comment: String = sbone.get("comment", "")
 		var stiffness_force = float(sbone.get("stiffiness", 1.0))
 		var gravity_power = float(sbone.get("gravityPower", 0.0))
 		var gravity_dir_json = sbone.get("gravityDir", {"x": 0.0, "y": -1.0, "z": 0.0})
-		var gravity_dir = Vector3(gravity_dir_json["x"], gravity_dir_json["y"], gravity_dir_json["z"])
+		var gravity_dir = Vector3(
+			gravity_dir_json["x"], gravity_dir_json["y"], gravity_dir_json["z"]
+		)
 		var drag_force = float(sbone.get("dragForce", 0.4))
 		var hit_radius = float(sbone.get("hitRadius", 0.02))
 
@@ -775,7 +1080,13 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 		# Append to indiviudal packed arrays
 		var joint_chains: Array[PackedStringArray]
 		for bone_node in sbone["bones"]:
-			_create_joints_recursive(joint_chains, skeleton, skeleton.find_bone(nodes[int(bone_node)].resource_name), 1, -1)
+			_create_joints_recursive(
+				joint_chains,
+				skeleton,
+				skeleton.find_bone(nodes[int(bone_node)].resource_name),
+				1,
+				-1
+			)
 
 		# Center commonly points outside of the glTF Skeleton, such as the root node.
 		var center_node: NodePath = NodePath()
@@ -784,12 +1095,17 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 		if center_node_idx != -1:
 			var center_gltfnode: GLTFNode = nodes[int(center_node_idx)]
 			var bone_name: String = center_gltfnode.resource_name
-			if center_gltfnode.skeleton == gltfnode.skeleton and skeleton.find_bone(bone_name) != -1:
+			if (
+				center_gltfnode.skeleton == gltfnode.skeleton
+				and skeleton.find_bone(bone_name) != -1
+			):
 				center_bone = bone_name
 				center_node = NodePath()
 			else:
 				center_bone = ""
-				center_node = (secondary_node.get_path_to(gstate.get_scene_node(int(center_node_idx))))
+				center_node = (secondary_node.get_path_to(
+					gstate.get_scene_node(int(center_node_idx))
+				))
 				if center_node == NodePath():
 					push_error("Failed to find center scene node " + str(center_node_idx))
 					center_node = secondary_node.get_path_to(secondary_node)  # Fallback
@@ -820,7 +1136,9 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 	secondary_node.set("spring_bones", spring_bones)
 
 
-func _add_joints_recursive(new_joints_set: Dictionary, gltf_nodes: Array, bone: int, include_child_meshes: bool = false) -> void:
+func _add_joints_recursive(
+	new_joints_set: Dictionary, gltf_nodes: Array, bone: int, include_child_meshes: bool = false
+) -> void:
 	if bone < 0:
 		return
 	var gltf_node: Dictionary = gltf_nodes[bone]
@@ -875,7 +1193,9 @@ func _add_vrm_nodes_to_skin(obj: Dictionary) -> bool:
 	return true
 
 
-func _import_preflight(gstate: GLTFState, extensions: PackedStringArray = PackedStringArray(), psa2: Variant = null) -> Error:
+func _import_preflight(
+	gstate: GLTFState, extensions: PackedStringArray = PackedStringArray(), psa2: Variant = null
+) -> Error:
 	if extensions.has("VRMC_vrm"):
 		# VRM 1.0 file. Do not parse as a VRM 0.0.
 		return ERR_INVALID_DATA
@@ -925,7 +1245,9 @@ func _import_post(gstate: GLTFState, node: Node) -> Error:
 
 	var skeletons = gstate.get_skeletons()
 	var hipsNode: GLTFNode = gstate.nodes[human_bone_to_idx["hips"]]
-	var skeleton: Skeleton3D = _get_skel_godot_node(gstate, gstate.nodes, skeletons, hipsNode.skeleton)
+	var skeleton: Skeleton3D = _get_skel_godot_node(
+		gstate, gstate.nodes, skeletons, hipsNode.skeleton
+	)
 	var gltfnodes: Array = gstate.nodes
 
 	var humanBones: BoneMap = BoneMap.new()
@@ -933,7 +1255,10 @@ func _import_post(gstate: GLTFState, node: Node) -> Error:
 
 	var vrm_to_human_bone = vrm_constants_class.get_vrm_to_human_bone(is_vrm_0)  # vrm 0.0
 	for humanBoneName in human_bone_to_idx:
-		humanBones.set_skeleton_bone_name(vrm_to_human_bone[humanBoneName], gltfnodes[human_bone_to_idx[humanBoneName]].resource_name)
+		humanBones.set_skeleton_bone_name(
+			vrm_to_human_bone[humanBoneName],
+			gltfnodes[human_bone_to_idx[humanBoneName]].resource_name
+		)
 
 	if is_vrm_0:
 		# VRM 0.0 has models facing backwards due to a spec error (flipped z instead of x)
@@ -968,10 +1293,25 @@ func _import_post(gstate: GLTFState, node: Node) -> Error:
 
 	root_node.set_script(vrm_top_level)
 
-	var vrm_meta: Resource = _create_meta(root_node, animplayer, vrm_extension, gstate, skeleton, humanBones, human_bone_to_idx, pose_diffs)
+	var vrm_meta: Resource = _create_meta(
+		root_node,
+		animplayer,
+		vrm_extension,
+		gstate,
+		skeleton,
+		humanBones,
+		human_bone_to_idx,
+		pose_diffs
+	)
 	root_node.set("vrm_meta", vrm_meta)
 
-	if vrm_extension.has("secondaryAnimation") and (vrm_extension["secondaryAnimation"].get("colliderGroups", []).size() > 0 or vrm_extension["secondaryAnimation"].get("boneGroups", []).size() > 0):
+	if (
+		vrm_extension.has("secondaryAnimation")
+		and (
+			vrm_extension["secondaryAnimation"].get("colliderGroups", []).size() > 0
+			or vrm_extension["secondaryAnimation"].get("boneGroups", []).size() > 0
+		)
+	):
 		var secondary_node: Node = root_node.get_node("secondary")
 		if secondary_node == null:
 			secondary_node = Node3D.new()
@@ -980,4 +1320,5 @@ func _import_post(gstate: GLTFState, node: Node) -> Error:
 			secondary_node.set_name("secondary")
 
 		_parse_secondary_node(secondary_node, vrm_extension, gstate, pose_diffs, is_vrm_0)
+	vrm_utils.refresh_global_poses(skeleton)
 	return OK

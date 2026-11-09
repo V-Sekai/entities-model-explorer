@@ -69,6 +69,7 @@ static func get_vrm_to_human_bone(is_vrm_0) -> Dictionary:
 		return vrm0_to_human_bone
 	return vrm_to_human_bone
 
+
 enum HeadHidingSetting {
 	ThirdPersonOnly = 0,
 	FirstPersonOnly = 1,

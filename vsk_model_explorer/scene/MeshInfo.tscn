@@ -1,12 +1,10 @@
-[gd_scene load_steps=3 format=3 uid="uid://ctwjn4i10sfdp"]
+[gd_scene load_steps=2 format=3 uid="uid://ctwjn4i10sfdp"]
 
-[ext_resource type="Theme" uid="uid://3n58c5iseefm" path="res://vsk_model_explorer/resource/Theme.theme" id="1_prrf1"]
 [ext_resource type="Script" path="res://vsk_model_explorer/core/MeshInfo.gd" id="2_vinha"]
 
 [node name="MeshInfo" type="PanelContainer"]
 offset_right = 241.0
 offset_bottom = 113.0
-theme = ExtResource("1_prrf1")
 script = ExtResource("2_vinha")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]

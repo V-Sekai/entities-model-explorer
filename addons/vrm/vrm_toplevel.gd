@@ -7,11 +7,13 @@ const spring_bone_class = preload("./vrm_spring_bone.gd")
 const collider_class = preload("./vrm_collider.gd")
 const collider_group_class = preload("./vrm_collider_group.gd")
 
-@export var vrm_meta: Resource = (func():
-	var ret: vrm_meta_class = vrm_meta_class.new()
-	ret.resource_name = "CLICK TO SEE METADATA"
-	return ret
-).call()
+@export var vrm_meta: Resource = (
+	(func():
+		var ret: vrm_meta_class = vrm_meta_class.new()
+		ret.resource_name = "CLICK TO SEE METADATA"
+		return ret)
+	. call()
+)
 
 @export_category("Springbone Settings")
 @export var update_secondary_fixed: bool = false

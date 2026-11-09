@@ -1,0 +1,230 @@
+skintokens:
+  cff-version: 1.2.0
+  title: SkinTokens viewer (desktop downloads)
+  message: If you use these files, please cite them and the upstream sources listed under `references`.
+  type: software
+  authors:
+  - family-names: Lee
+    given-names: K. S. Ernest (iFire)
+    alias: fire
+    website: https://github.com/fire
+  license-url: https://huggingface.co/chibifire/interactor-skintokens-viewer/blob/main/LICENSE.md
+  url: https://huggingface.co/chibifire/interactor-skintokens-viewer
+  date-released: '2026-10-19'
+  references:
+  - type: software
+    title: interactor-skintokens-guest
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/interactor-skintokens-guest
+    license-url: https://github.com/V-Sekai-fire/interactor-skintokens-guest/blob/main/LICENSE
+    notes: The rig program skintokens.elf. All rights reserved, licensed only to K. S. Ernest (iFire)
+      Lee; a free and open-source licence is not yet decided.
+  - type: software
+    title: Model Explorer
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/entities-model-explorer
+    license: MIT
+    notes: The viewer.
+  - type: software
+    title: Godot Engine
+    authors:
+    - name: Godot Engine contributors
+    url: https://godotengine.org
+    repository-code: https://github.com/godotengine/godot
+    license: MIT
+  - type: software
+    title: SkinTokens (TokenRig)
+    authors:
+    - name: VAST-AI-Research contributors
+    repository-code: https://github.com/VAST-AI-Research/SkinTokens
+    url: https://huggingface.co/VAST-AI/SkinTokens
+    license: MIT
+  - type: software
+    title: SkinTokens-GGUF-BF16
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    - name: VAST-AI-Research contributors
+    url: https://huggingface.co/chibifire/SkinTokens-GGUF-BF16
+    license: MIT
+    notes: The BF16 GGUF weights in the downloads, converted from SkinTokens.
+  - type: software
+    title: skin-tokens-ggml
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/skin-tokens-ggml
+    license: Apache-2.0
+  - type: software
+    title: ggml-rd
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/contract-ggml-rd
+    license: MIT
+    notes: Operates ggml on the GPU through Godot's rendering device.
+  - type: software
+    title: ggml
+    authors:
+    - name: The ggml authors
+    repository-code: https://github.com/ggml-org/ggml
+    license: MIT
+  - type: software
+    title: godot-sandbox
+    authors:
+    - name: godot-sandbox contributors
+    repository-code: https://github.com/V-Sekai-fire/godot-sandbox
+    license: BSD-3-Clause
+    notes: Operates the viewer scripts and the guest programs as RISC-V guest programs (libriscv).
+  - type: software
+    title: godot-vrm and Godot-MToon-Shader
+    authors:
+    - name: V-Sekai contributors
+    repository-code: https://github.com/V-Sekai/godot-vrm
+    license: MIT
+  - type: software
+    title: OpenUSD
+    authors:
+    - name: Pixar Animation Studios
+    url: https://openusd.org
+    license-url: https://github.com/PixarAnimationStudios/OpenUSD/blob/release/LICENSE.txt
+    notes: Tomorrow Open Source Technology License 1.0. Reads OpenUSD files in interactor-usd-guest.
+  - type: software
+    title: oneTBB
+    authors:
+    - name: Intel Corporation
+    repository-code: https://github.com/uxlfoundation/oneTBB
+    license: Apache-2.0
+  - type: software
+    title: interactor-usd-guest
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/interactor-usd-guest
+    license: MIT
+  - type: software
+    title: libriscv
+    authors:
+    - name: libriscv contributors
+    repository-code: https://github.com/libriscv/libriscv
+    license: BSD-3-Clause
+  - type: software
+    title: JSON for Modern C++
+    authors:
+    - family-names: Lohmann
+      given-names: Niels
+    repository-code: https://github.com/nlohmann/json
+    license: MIT
+kimodo:
+  cff-version: 1.2.0
+  title: Kimodo motion viewer (desktop downloads)
+  message: If you use these files, please cite them and the upstream sources listed under `references`.
+  type: software
+  authors:
+  - family-names: Lee
+    given-names: K. S. Ernest (iFire)
+    alias: fire
+    website: https://github.com/fire
+  license: MIT
+  url: https://huggingface.co/chibifire/interactor-kimodo-motion-viewer
+  date-released: '2026-10-19'
+  references:
+  - type: software
+    title: Kimodo-SOMA-RP-v1.1
+    authors:
+    - name: NVIDIA
+    url: https://huggingface.co/nvidia/Kimodo-SOMA-RP-v1.1
+    license-url: https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license
+    notes: NVIDIA Open Model License. The animation model. The downloads carry its GGUF file from chibifire/Kimodo-SOMA-RP-v1.1-gguf.
+  - type: software
+    title: Kimodo
+    authors:
+    - name: NVIDIA
+    repository-code: https://github.com/nv-tlabs/kimodo
+    license: Apache-2.0
+  - type: software
+    title: interactor-motion-guest
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/interactor-motion-guest
+    license: MIT
+  - type: software
+    title: Llama-3-Kimodo-GGML (LLM2Vec encoder, Meta Llama 3)
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    - name: Meta
+    url: https://huggingface.co/chibifire/Llama-3-Kimodo-GGML
+    license-url: https://www.llama.com/llama3/license/
+    notes: Meta Llama 3 Community License. Made the 18 inputs of the animation model. These inputs are
+      the output of a program; no person wrote them. The downloads do not contain the Llama 3 model.
+  - type: software
+    title: skin-tokens-ggml
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/skin-tokens-ggml
+    license: Apache-2.0
+  - type: software
+    title: Model Explorer
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/entities-model-explorer
+    license: MIT
+    notes: The viewer.
+  - type: software
+    title: Godot Engine
+    authors:
+    - name: Godot Engine contributors
+    url: https://godotengine.org
+    repository-code: https://github.com/godotengine/godot
+    license: MIT
+  - type: software
+    title: ggml-rd
+    authors:
+    - family-names: Lee
+      given-names: K. S. Ernest (iFire)
+      alias: fire
+      website: https://github.com/fire
+    repository-code: https://github.com/V-Sekai-fire/contract-ggml-rd
+    license: MIT
+    notes: Operates ggml on the GPU through Godot's rendering device.
+  - type: software
+    title: ggml
+    authors:
+    - name: The ggml authors
+    repository-code: https://github.com/ggml-org/ggml
+    license: MIT
+  - type: software
+    title: godot-sandbox
+    authors:
+    - name: godot-sandbox contributors
+    repository-code: https://github.com/V-Sekai-fire/godot-sandbox
+    license: BSD-3-Clause
+    notes: Operates the viewer scripts and the guest programs as RISC-V guest programs (libriscv).

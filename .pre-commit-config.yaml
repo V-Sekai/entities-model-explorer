@@ -1,0 +1,12 @@
+# GDScript formatting, checked with gdformat from gdtoolkit.
+#
+# Model Explorer ships as SafeGDScript guests compiled from these files, so a formatting change is
+# a source change the compiler sees too; one style keeps those diffs about what changed.
+repos:
+  - repo: https://github.com/Scony/godot-gdscript-toolkit
+    rev: 4.5.0
+    hooks:
+      - id: gdformat
+        # Never reformat somebody else's scripts: the MToon shader addon is vendored from its
+        # own repository, and a reformatted copy would come back as a diff on the next sync.
+        exclude: '^addons/Godot-MToon-Shader/'

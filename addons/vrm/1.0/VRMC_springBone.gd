@@ -33,7 +33,9 @@ func _adjust_magnitude(pfa: PackedFloat64Array, scale: float):
 				pfa[i] = pfa[i] / scale
 
 
-func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gstate: GLTFState) -> void:
+func _parse_secondary_node(
+	secondary_node: Node, vrm_extension: Dictionary, gstate: GLTFState
+) -> void:
 	var nodes = gstate.get_nodes()
 	var skeletons = gstate.get_skeletons()
 	var skeleton: Skeleton3D = null
@@ -121,15 +123,23 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 		spring_bone.drag_force_scale = 0
 		for sjoint in sbone["joints"]:
 			spring_bone.hit_radius.append(float(sjoint.get("hitRadius", 0.0)))
-			spring_bone.hit_radius_scale = max(spring_bone.hit_radius_scale, spring_bone.hit_radius[-1])
+			spring_bone.hit_radius_scale = max(
+				spring_bone.hit_radius_scale, spring_bone.hit_radius[-1]
+			)
 			spring_bone.stiffness_force.append(float(sjoint.get("stiffiness", 1.0)))
-			spring_bone.stiffness_scale = max(spring_bone.stiffness_scale, spring_bone.stiffness_force[-1])
+			spring_bone.stiffness_scale = max(
+				spring_bone.stiffness_scale, spring_bone.stiffness_force[-1]
+			)
 			spring_bone.gravity_power.append(float(sjoint.get("gravityPower", 0.0)))
-			spring_bone.gravity_scale = max(spring_bone.gravity_scale, spring_bone.gravity_power[-1])
+			spring_bone.gravity_scale = max(
+				spring_bone.gravity_scale, spring_bone.gravity_power[-1]
+			)
 			var gravity_dir = sjoint.get("gravityDir", [0.0, -1.0, 0.0])
 			spring_bone.gravity_dir.append(Vector3(gravity_dir[0], gravity_dir[1], gravity_dir[2]))
 			spring_bone.drag_force.append(float(sjoint.get("dragForce", 0.5)))
-			spring_bone.drag_force_scale = max(spring_bone.drag_force_scale, spring_bone.drag_force[-1])
+			spring_bone.drag_force_scale = max(
+				spring_bone.drag_force_scale, spring_bone.drag_force[-1]
+			)
 
 			var bone_node: int = sjoint["node"]
 			var bone_name: String = nodes[int(bone_node)].resource_name
@@ -148,7 +158,10 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 
 		if len(spring_bone.gravity_dir) > 0:
 			spring_bone.gravity_dir_default = spring_bone.gravity_dir[0]
-			if spring_bone.gravity_dir.count(spring_bone.gravity_dir_default) == len(spring_bone.gravity_dir):
+			if (
+				spring_bone.gravity_dir.count(spring_bone.gravity_dir_default)
+				== len(spring_bone.gravity_dir)
+			):
 				spring_bone.gravity_dir.clear()
 
 		if not spring_bone.comment.is_empty():
@@ -167,12 +180,18 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 		if center_node_idx != -1:
 			var center_gltfnode: GLTFNode = nodes[int(center_node_idx)]
 			var bone_name: String = center_gltfnode.resource_name
-			if skeleton != null and center_gltfnode.skeleton == gltfnode.skeleton and skeleton.find_bone(bone_name) != -1:
+			if (
+				skeleton != null
+				and center_gltfnode.skeleton == gltfnode.skeleton
+				and skeleton.find_bone(bone_name) != -1
+			):
 				spring_bone.center_bone = bone_name
 				spring_bone.center_node = NodePath()
 			else:
 				spring_bone.center_bone = ""
-				spring_bone.center_node = (secondary_node.get_path_to(gstate.get_scene_node(int(center_node_idx))))
+				spring_bone.center_node = (secondary_node.get_path_to(
+					gstate.get_scene_node(int(center_node_idx))
+				))
 				if spring_bone.center_node == NodePath():
 					push_error("Failed to find center scene node " + str(center_node_idx))
 					spring_bone.center_node = secondary_node.get_path_to(secondary_node)  # Fallback
@@ -184,7 +203,9 @@ func _parse_secondary_node(secondary_node: Node, vrm_extension: Dictionary, gsta
 	secondary_node.set("spring_bones", spring_bones)
 
 
-func _add_joints_recursive(new_joints_set: Dictionary, gltf_nodes: Array, bone: int, include_child_meshes: bool = false) -> void:
+func _add_joints_recursive(
+	new_joints_set: Dictionary, gltf_nodes: Array, bone: int, include_child_meshes: bool = false
+) -> void:
 	if bone < 0:
 		return
 	var gltf_node: Dictionary = gltf_nodes[bone]
@@ -242,7 +263,9 @@ func _import_post(state: GLTFState, root_node: Node):
 	var gltf_json: Dictionary = state.json
 	var vrm_extension: Dictionary = gltf_json["extensions"]["VRMC_springBone"]
 	if vrm_extension.get("specVersion", "") != "1.0":
-		push_warning("Unsupported VRMC_springBone specVersion " + str(vrm_extension.get("specVersion", "")))
+		push_warning(
+			"Unsupported VRMC_springBone specVersion " + str(vrm_extension.get("specVersion", ""))
+		)
 
 	var secondary_node: Node
 	if root_node.has_node("secondary"):
@@ -312,7 +335,9 @@ func _export_post(state: GLTFState):
 
 	var skel_to_godot_bone_to_gltf_node_map: Dictionary = {}
 	for skely in state.skeletons:
-		skel_to_godot_bone_to_gltf_node_map[skely.get_godot_skeleton()] = skely.get_godot_bone_node()
+		skel_to_godot_bone_to_gltf_node_map[skely.get_godot_skeleton()] = (
+			skely.get_godot_bone_node()
+		)
 	var godot_node_to_idx: Dictionary = {}
 	var json_nodes: Array = json["nodes"]
 	for i in range(len(json_nodes)):
@@ -341,12 +366,21 @@ func _export_post(state: GLTFState):
 			}
 		var node_idx: int
 		if collider.bone != "":
-			node_idx = skel_to_godot_bone_to_gltf_node_map.get(skel, {}).get(skel.find_bone(collider.bone), -1)
+			node_idx = skel_to_godot_bone_to_gltf_node_map.get(skel, {}).get(
+				skel.find_bone(collider.bone), -1
+			)
 		else:
 			# FIXME: This case should perhaps no longer be supported.
 			node_idx = godot_node_to_idx.get(secondary.get_node(collider.node_path), -1)
 		if node_idx == -1:
-			push_warning("Unable to find spring bone collider node " + str(collider.node_path) + "/" + str(collider.bone))
+			push_warning(
+				(
+					"Unable to find spring bone collider node "
+					+ str(collider.node_path)
+					+ "/"
+					+ str(collider.bone)
+				)
+			)
 			continue
 		json_colliders.push_back({"node": node_idx, "shape": shape})
 	sbone_extension["colliders"] = json_colliders
@@ -374,7 +408,9 @@ func _export_post(state: GLTFState):
 		if springbone.center_node == NodePath() and springbone.center_bone == "":
 			pass
 		elif springbone.center_node == NodePath():
-			spring["center"] = skel_to_godot_bone_to_gltf_node_map[skel][skel.find_bone(springbone.center_bone)]
+			spring["center"] = skel_to_godot_bone_to_gltf_node_map[skel][skel.find_bone(
+				springbone.center_bone
+			)]
 		else:
 			spring["center"] = godot_node_to_idx[secondary.get_node(springbone.center_node)]
 		var spring_groups: Array = []
@@ -390,31 +426,56 @@ func _export_post(state: GLTFState):
 			var joint: Dictionary = {}
 			if springbone.joint_nodes[i] == "":
 				var node_idx = len(json_nodes)
-				var delta: Vector3 = skel.get_bone_rest(skel.find_bone(springbone.joint_nodes[i - 1])).origin
+				var delta: Vector3 = (
+					skel.get_bone_rest(skel.find_bone(springbone.joint_nodes[i - 1])).origin
+				)
 				var pos: Vector3 = delta.normalized() * 0.07
 				var prev_node_dict: Dictionary = json_nodes[prev_node_index]
-				json_nodes.append({"name": prev_node_dict["name"] + "_end", "translation": [pos[0], pos[1], pos[2]]})
+				json_nodes.append(
+					{
+						"name": prev_node_dict["name"] + "_end",
+						"translation": [pos[0], pos[1], pos[2]]
+					}
+				)
 				if not prev_node_dict.has("children"):
 					prev_node_dict["children"] = []
 				var prev_node_children: Array = prev_node_dict["children"]
 				prev_node_children.append(node_idx)
 				prev_node_index = node_idx
 			else:
-				prev_node_index = skel_to_godot_bone_to_gltf_node_map.get(skel, {}).get(skel.find_bone(springbone.joint_nodes[i]), -1)
+				prev_node_index = skel_to_godot_bone_to_gltf_node_map.get(skel, {}).get(
+					skel.find_bone(springbone.joint_nodes[i]), -1
+				)
 			if prev_node_index == -1:
 				continue
 			joint["node"] = prev_node_index
 
-			var gravity_dir: Vector3 = (springbone.gravity_dir[i] if i < len(springbone.gravity_dir) else springbone.gravity_dir_default)
+			var gravity_dir: Vector3 = (
+				springbone.gravity_dir[i]
+				if i < len(springbone.gravity_dir)
+				else springbone.gravity_dir_default
+			)
 
 			var pfa: PackedFloat64Array = springbone.gravity_power
-			var gravity_power: float = (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1]) * springbone.gravity_scale
+			var gravity_power: float = (
+				(1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+				* springbone.gravity_scale
+			)
 			pfa = springbone.stiffness_force
-			var stiffness: float = springbone.stiffness_scale * (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			var stiffness: float = (
+				springbone.stiffness_scale
+				* (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			)
 			pfa = springbone.drag_force
-			var drag_force: float = springbone.drag_force_scale * (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			var drag_force: float = (
+				springbone.drag_force_scale
+				* (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			)
 			pfa = springbone.hit_radius
-			var hit_radius = springbone.hit_radius_scale * (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			var hit_radius = (
+				springbone.hit_radius_scale
+				* (1.0 if pfa.is_empty() else pfa[i] if i < len(pfa) else pfa[-1])
+			)
 
 			if not is_zero_approx(hit_radius):
 				joint["hitRadius"] = hit_radius
@@ -422,15 +483,21 @@ func _export_post(state: GLTFState):
 				joint["stiffness"] = stiffness
 			if not is_zero_approx(gravity_power):
 				joint["gravityPower"] = gravity_power
-			if not gravity_dir.is_equal_approx(Vector3(0, -1, 0)) and not is_zero_approx(gravity_power):
+			if (
+				not gravity_dir.is_equal_approx(Vector3(0, -1, 0))
+				and not is_zero_approx(gravity_power)
+			):
 				joint["gravityDir"] = [gravity_dir[0], gravity_dir[1], gravity_dir[2]]
 			if not is_equal_approx(drag_force, 0.5):
 				joint["dragForce"] = drag_force
 			joints.push_back(joint)
 		if len(joints) < 2:
-			push_warning("Unable to resolve vrm springbone joints " + ','.join(springbone.joint_nodes))
+			push_warning(
+				"Unable to resolve vrm springbone joints " + ",".join(springbone.joint_nodes)
+			)
 			continue
 		spring["joints"] = joints
 		json_springs.push_back(spring)
 	sbone_extension["springs"] = json_springs
 	sbone_extension["specVersion"] = "1.0"
+	return OK

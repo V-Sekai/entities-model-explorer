@@ -20,6 +20,7 @@ const bone_node_constraint = preload("./bone_node_constraint.gd")
 var skel: Skeleton3D
 var internal_modifier_node: Node3D
 
+
 func _ready() -> void:
 	if skeleton != NodePath():
 		skel = get_node(skeleton)
@@ -47,9 +48,11 @@ func _ready() -> void:
 		skel.add_child(internal_modifier_node, false, Node.INTERNAL_MODE_BACK)
 		internal_modifier_node.connect(&"modification_processed", self.do_process)
 
+
 func _process(_delta: float):
 	#if not ClassDB.class_exists(&"SkeletonModifier3D"):
-		do_process()
+	do_process()
+
 
 func do_process() -> void:
 	for constraint in constraints:

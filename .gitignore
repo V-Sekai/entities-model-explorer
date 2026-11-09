@@ -23,3 +23,20 @@ target
 .github/dagger/cue.mod
 build
 third_party
+
+# Desktop auto-rig inputs, fetched by tools/desktop_rig_deps.sh, never committed
+/addons/godot_sandbox/
+/skintokens.elf
+/w
+/skintokens.elf.uid
+/usd.elf
+/usd.elf.uid
+/motion.elf
+/motion.elf.uid
+/bintr/
+# The motion-matching guest and its clips come from interactor-motion-matching-guest (package_desktop.sh MM_ELF, MM_DATA)
+/mm.elf
+/motion/mm/
+
+# Built by tools/liltoon_pack.gd from thirdparty/lilToon
+vsk_model_explorer/liltoon.tar

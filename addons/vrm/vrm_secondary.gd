@@ -4,8 +4,9 @@ extends Node3D
 
 const spring_bone_class = preload("./vrm_spring_bone.gd")
 const collider_class = preload("./vrm_collider.gd")
+const VrmColliderRuntime = preload("./vrm_collider_runtime.gd")
+const SpringBoneRuntimeState = preload("./vrm_spring_bone_runtime.gd")
 const collider_group_class = preload("./vrm_collider_group.gd")
-
 
 @export_category("Springbone Settings")
 @export var update_secondary_fixed: bool = false:
@@ -92,10 +93,10 @@ var internal_modifier_node: Node3D
 
 # Props
 
-var spring_bones_internal: Array[spring_bone_class.SpringBoneRuntimeState]
+var spring_bones_internal: Array[SpringBoneRuntimeState]
 var springs_centers: PackedInt32Array
 
-var colliders_internal: Array[collider_class.VrmRuntimeCollider]
+var colliders_internal: Array[VrmColliderRuntime]
 var colliders_centers: PackedInt32Array
 var center_bones: PackedInt32Array
 var center_nodes: Array[Node3D]
@@ -109,12 +110,14 @@ var is_child_of_vrm: bool = false
 var colliders_changed: bool = false
 var modify_gravity: bool = false
 
-@export var collider_groups: Array[collider_group_class] # Unused, but this way we don't break script compatibility.
-@export var collider_library: Array[collider_class] # Unused, intended to make inspecting easier
+@export var collider_groups: Array[collider_group_class]  # Unused, but this way we don't break script compatibility.
+@export var collider_library: Array[collider_class]  # Unused, intended to make inspecting easier
 var spring_bones_cached: Array[spring_bone_class]
+
 
 func _on_recreate_collider():
 	colliders_changed = true
+
 
 # Collider state
 # TODO: explore packed data to make processing optimization such as c++ easier.
@@ -139,11 +142,17 @@ func _ready() -> void:
 		internal_modifier_node = ClassDB.instantiate("SkeletonModifier3D")
 		internal_modifier_node.name = "VRM_internal_skeleton_modifier"
 		skel.add_child(internal_modifier_node, false, Node.INTERNAL_MODE_BACK)
-		internal_modifier_node.connect(&"modification_processed", self._on_secondary_process_modification_processed)
+		internal_modifier_node.connect(
+			&"modification_processed", self._on_secondary_process_modification_processed
+		)
 
 	spring_bones_cached = spring_bones
 	var gizmo_spring_bone: bool = false
-	if get_parent() != null and get_parent().script != null and get_parent().script.resource_path.get_file() == "vrm_toplevel.gd":
+	if (
+		get_parent() != null
+		and get_parent().script != null
+		and get_parent().script.resource_path.get_file() == "vrm_toplevel.gd"
+	):
 		is_child_of_vrm = true
 	if is_child_of_vrm:
 		get_parent().spring_bones = spring_bones
@@ -199,7 +208,7 @@ func _ready() -> void:
 			center_key = spring_bone.center_node
 		var center_idx: int = center_to_index[center_key]
 
-		var tmp_colliders: Array[collider_class.VrmRuntimeCollider] = []
+		var tmp_colliders: Array[VrmColliderRuntime] = []
 		for collider_group in spring_bone.collider_groups:
 			if not seen_collider_groups.has(collider_group):
 				seen_collider_groups[collider_group] = true
@@ -209,8 +218,8 @@ func _ready() -> void:
 					seen_colliders[collider] = true
 					collider_library.append(collider)
 				if not collider.recreate_collider.is_connected(self._on_recreate_collider):
-					collider.recreate_collider.connect(self._on_recreate_collider) # Rebuild everything if anything changes.
-				var collider_runtime: collider_class.VrmRuntimeCollider
+					collider.recreate_collider.connect(self._on_recreate_collider)  # Rebuild everything if anything changes.
+				var collider_runtime: VrmColliderRuntime
 				if center_key not in center_to_collider_to_internal:
 					center_to_collider_to_internal[center_key] = {}
 				if center_to_collider_to_internal[center_key].has(collider):
@@ -257,7 +266,9 @@ func update_centers(skel_transform: Transform3D):
 				center_transforms[center_i] = center_xform_inv * center_transforms[center_i]
 				center_transforms_inv[center_i] = center_transforms_inv[center_i] * center_xform
 		elif center_bones[center_i] == -1 and center_node != null:
-			center_transforms[center_i] = center_node.global_transform.affine_inverse() * skel_transform
+			center_transforms[center_i] = (
+				center_node.global_transform.affine_inverse() * skel_transform
+			)
 			center_transforms_inv[center_i] = skel_transform_inv * center_node.global_transform
 		else:
 			center_transforms[center_i] = skel.get_bone_global_pose(center_bones[center_i])
@@ -279,7 +290,11 @@ func tick_spring_bones(delta: float) -> void:
 		var parent: Node = get_parent()
 	var parent: Node = get_parent()
 	if is_child_of_vrm:
-		if parent.springbone_gravity_rotation != springbone_gravity_rotation or parent.springbone_gravity_multiplier != springbone_gravity_multiplier or parent.springbone_add_force != springbone_add_force:
+		if (
+			parent.springbone_gravity_rotation != springbone_gravity_rotation
+			or parent.springbone_gravity_multiplier != springbone_gravity_multiplier
+			or parent.springbone_add_force != springbone_add_force
+		):
 			springbone_add_force = parent.springbone_add_force
 			springbone_gravity_rotation = parent.springbone_gravity_rotation
 			springbone_gravity_multiplier = parent.springbone_gravity_multiplier
@@ -309,9 +324,15 @@ func tick_spring_bones(delta: float) -> void:
 			spring_bones_internal[spring_i].pre_update()
 
 	for collider_i in range(len(colliders_internal)):
-		colliders_internal[collider_i].update(skel_transform, center_transforms[colliders_centers[collider_i]], skel)
+		colliders_internal[collider_i].update(
+			skel_transform, center_transforms[colliders_centers[collider_i]], skel
+		)
 	for spring_i in range(len(spring_bones_internal)):
-		spring_bones_internal[spring_i].update(delta, center_transforms[springs_centers[spring_i]], center_transforms_inv[springs_centers[spring_i]])
+		spring_bones_internal[spring_i].update(
+			delta,
+			center_transforms[springs_centers[spring_i]],
+			center_transforms_inv[springs_centers[spring_i]]
+		)
 
 	if secondary_gizmo != null:
 		if Engine.is_editor_hint():
@@ -352,7 +373,9 @@ func do_process(delta: float) -> void:
 				var skel_transform: Transform3D = skel.global_transform
 				update_centers(skel_transform)
 				for collider_i in range(len(colliders_internal)):
-					colliders_internal[collider_i].update(skel_transform, center_transforms[colliders_centers[collider_i]], skel)
+					colliders_internal[collider_i].update(
+						skel_transform, center_transforms[colliders_centers[collider_i]], skel
+					)
 				secondary_gizmo.draw_in_editor()
 
 
@@ -391,7 +414,9 @@ class SecondaryGizmo:
 		# Spring bones
 		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 		for spring_bone in secondary_node.spring_bones_internal:
-			var center_transform_inv: Transform3D = secondary_node.center_transforms_inv[secondary_node.springs_centers[i]]
+			var center_transform_inv: Transform3D = secondary_node.center_transforms_inv[
+				secondary_node.springs_centers[i]
+			]
 			for v in spring_bone.verlets:
 				var s_tr: Transform3D = Transform3D.IDENTITY
 				if v.bone_idx != -1:
@@ -401,7 +426,12 @@ class SecondaryGizmo:
 				var s_tr: Transform3D = Transform3D.IDENTITY
 				if v.bone_idx != -1:
 					s_tr = s_sk.get_bone_global_pose(v.bone_idx)
-				draw_sphere((center_transform_inv.basis * s_tr.basis).orthonormalized(), center_transform_inv * v.current_tail, v.radius, color)
+				draw_sphere(
+					(center_transform_inv.basis * s_tr.basis).orthonormalized(),
+					center_transform_inv * v.current_tail,
+					v.radius,
+					color
+				)
 			i += 1
 		mesh.surface_end()
 
@@ -412,7 +442,9 @@ class SecondaryGizmo:
 		var i: int = 0
 		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 		for collider in secondary_node.colliders_internal:
-			var center_transform_inv: Transform3D = secondary_node.center_transforms_inv[secondary_node.colliders_centers[i]]
+			var center_transform_inv: Transform3D = secondary_node.center_transforms_inv[
+				secondary_node.colliders_centers[i]
+			]
 			collider.draw_debug(mesh, center_transform_inv)
 			i += 1
 		mesh.surface_end()
@@ -422,19 +454,59 @@ class SecondaryGizmo:
 		var sppi: float = 2 * PI / step
 		for i in range(1, step + 1):
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.UP * radius).rotated(bas * Vector3.RIGHT, sppi * (i - 1 % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.UP * radius).rotated(
+						bas * Vector3.RIGHT, sppi * (i - 1 % step)
+					))
+				)
+			)
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.UP * radius).rotated(bas * Vector3.RIGHT, sppi * (i % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.UP * radius).rotated(bas * Vector3.RIGHT, sppi * (i % step)))
+				)
+			)
 		for i in range(1, step + 1):
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.RIGHT * radius).rotated(bas * Vector3.FORWARD, sppi * ((i - 1) % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.RIGHT * radius).rotated(
+						bas * Vector3.FORWARD, sppi * ((i - 1) % step)
+					))
+				)
+			)
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.RIGHT * radius).rotated(bas * Vector3.FORWARD, sppi * (i % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.RIGHT * radius).rotated(
+						bas * Vector3.FORWARD, sppi * (i % step)
+					))
+				)
+			)
 		for i in range(1, step + 1):
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.FORWARD * radius).rotated(bas * Vector3.UP, sppi * ((i - 1) % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.FORWARD * radius).rotated(
+						bas * Vector3.UP, sppi * ((i - 1) % step)
+					))
+				)
+			)
 			mesh.surface_set_color(color)
-			mesh.surface_add_vertex(center + ((bas * Vector3.FORWARD * radius).rotated(bas * Vector3.UP, sppi * (i % step))))
+			mesh.surface_add_vertex(
+				(
+					center
+					+ ((bas * Vector3.FORWARD * radius).rotated(
+						bas * Vector3.UP, sppi * (i % step)
+					))
+				)
+			)
 
 	func draw_line(begin_pos: Vector3, end_pos: Vector3, color: Color) -> void:
 		mesh.surface_set_color(color)

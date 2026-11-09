@@ -6,8 +6,6 @@
 
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
-> :warning: **Warning**: Please check the releases section. [V-Sekai/TOOL_model_explorer/releases](https://github.com/V-Sekai/TOOL_model_explorer/releases)
-
 V-Sekai Model Explorer is a comprehensive 3D model viewer, designed with the powerful Godot 4 engine. It's an excellent tool for anyone interested in exploring the intricacies of 3D models.
 
 <div style="width: 50%; margin: auto; overflow: hidden;">
@@ -26,7 +24,20 @@ V-Sekai Model Explorer is a comprehensive 3D model viewer, designed with the pow
 2. **Animation Playback**: Play back animations within the model for a dynamic viewing experience.
 3. **Interactive Controls**: Navigate around the model with ease using intuitive controls.
 4. **Double-Click Action**: Get a closer look at any part of the model with a simple double-click.
-5. **Hide Grid/Explode Meshes**: Customize your viewing experience by hiding the grid or exploding the meshes.
+5. **Wireframe/Explode/Hide Grid**: Press L for wireframe, E to take the model apart into its separate pieces, G to hide the grid and X for x-ray (every mesh turns translucent so the parts inside show through; X is prone in walk mode, so it does nothing there); the controls card lists every key.
+
+## MCP server
+
+An MCP client (an AI agent) can open a model in the viewer, auto-rig it, and take the result. The tools are `status`, `load_model`, `auto_rig`, `get_file`, `screenshot` and `persona_ask` (the persona's plan for a goal, from `persona.elf`), plus read-only scene tools (`get_scene_tree`, `get_node`, `get_property`, `find_nodes`, `get_aabb`, `get_bone_poses`, `ping`). The server is `addons/vsekai_godot_mcp` (from V-Sekai-fire/transport-godot-mcp, trimmed in `project.godot`); the tools are `vsk_model_explorer/core/RigTools.gd`.
+
+The server runs in the desktop viewer; the web viewer does not have it. Every shipped viewer
+(skintokens-viewer, walk-mode-viewer, kimodo-motion-viewer) hides the server and its on/off
+slider entirely and never listens by default -- reach it from any of them with `-- --mcp-port=8789`
+on the command line (or run the editor directly, which also enables it).
+
+- HTTP: start the viewer with `-- --mcp-port=8789`. Streamable HTTP is at `http://127.0.0.1:8789/mcp`, and the older HTTP+SSE transport is at `/sse`.
+
+Every protocol version from 2024-11-05 to 2026-07-28 works. `tools/mcp_check.py` checks the desktop viewer with the MCP Python SDK.
 
 ## Release notes
 
