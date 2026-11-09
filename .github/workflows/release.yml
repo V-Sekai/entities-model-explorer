@@ -160,38 +160,82 @@ jobs:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
           owner: V-Sekai-fire
-      - name: Fetch the Linux double-precision engine
+      # package_desktop.exs's `package` call always lays out and exports all three OS presets
+      # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), so
+      # even the Linux-only job needs the full engine set on disk; only the Linux archive is kept
+      # and shipped below.
+      - name: Fetch the double-precision engine (all three OS, package_desktop.exs needs all of them)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/engine"
           cd "$RUNNER_TEMP/engine"
-          for f in godot.linuxbsd.editor.double.x86_64 godot.linuxbsd.template_release.double.x86_64 \
-                   libfdb_c.so SHA256SUMS; do
+          for f in godot.linuxbsd.editor.double.x86_64 \
+                   godot.macos.editor.double.arm64 \
+                   godot.windows.editor.double.x86_64.llvm.exe \
+                   godot.linuxbsd.template_release.double.x86_64 \
+                   godot.macos.template_release.double.arm64 \
+                   godot.windows.template_release.double.x86_64.llvm.exe \
+                   libfdb_c.so libfdb_c.dylib fdb_c.dll SHA256SUMS; do
             gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
           done
-          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.linuxbsd\.template_release\.double\.x86_64|libfdb_c\.so)$' SHA256SUMS > wanted.sums
-          [ "$(wc -l < wanted.sums)" = 3 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
           sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
-      - name: Fetch the FoundationDB server and command line (Linux)
+      - name: Build the macOS export template (package_desktop.exs always exports the Mac preset too)
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          mkdir -p macos_template.app/Contents/MacOS
+          cp godot.macos.template_release.double.arm64 macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          chmod +x macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          printf 'APPL????' > macos_template.app/Contents/PkgInfo
+          cat > macos_template.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>$binary</string>
+            <key>CFBundleName</key><string>$name</string>
+            <key>CFBundleDisplayName</key><string>$name</string>
+            <key>CFBundleIconFile</key><string>icon.icns</string>
+            <key>CFBundleIdentifier</key><string>$bundle_identifier</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$short_version</string>
+            <key>CFBundleSignature</key><string>$signature</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>NSHumanReadableCopyright</key><string>$copyright</string>
+            <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.$app_category</string>
+            <key>NSHighResolutionCapable</key>$highres
+          </dict>
+          </plist>
+          PLIST
+          (cd macos_template.app && zip -qry ../macos-template.zip .)
+          rm -rf macos_template.app
+      - name: Fetch the FoundationDB server and command line (all three OS)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           cd "$RUNNER_TEMP/engine"
-          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.linux.x86_64
-          grep -E ' \*?fdbserver\.linux\.x86_64$' SHA256SUMS > server.sums
-          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.linux.x86_64"; cat SHA256SUMS; exit 1; }
+          for f in fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?fdbserver\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbserver"; cat SHA256SUMS; exit 1; }
           sha256sum -c server.sums
           mkdir cli && cd cli
-          for f in fdbcli.linux.x86_64 SHA256SUMS; do
+          for f in fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe SHA256SUMS; do
             gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
           done
-          grep -E ' \*?fdbcli\.linux\.x86_64$' SHA256SUMS > cli.sums
-          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.linux.x86_64"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?fdbcli\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbcli"; cat SHA256SUMS; exit 1; }
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
@@ -738,40 +782,85 @@ jobs:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
           owner: V-Sekai-fire
-      - name: Fetch the Linux editor (to run the exporter) and the Windows double-precision engine
+      # package_desktop.exs's `package` call always lays out and exports all three OS presets
+      # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), so
+      # even the Windows-only job needs the full engine set on disk; only the Windows archive is
+      # kept and shipped below.
+      - name: Fetch the double-precision engine (all three OS, package_desktop.exs needs all of them)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/engine"
           cd "$RUNNER_TEMP/engine"
-          for f in godot.linuxbsd.editor.double.x86_64 godot.windows.editor.double.x86_64.llvm.exe \
-                   godot.windows.template_release.double.x86_64.llvm.exe fdb_c.dll SHA256SUMS; do
+          for f in godot.linuxbsd.editor.double.x86_64 \
+                   godot.macos.editor.double.arm64 \
+                   godot.windows.editor.double.x86_64.llvm.exe \
+                   godot.linuxbsd.template_release.double.x86_64 \
+                   godot.macos.template_release.double.arm64 \
+                   godot.windows.template_release.double.x86_64.llvm.exe \
+                   libfdb_c.so libfdb_c.dylib fdb_c.dll SHA256SUMS; do
             gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
           done
-          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|fdb_c\.dll)$' SHA256SUMS > wanted.sums
-          [ "$(wc -l < wanted.sums)" = 4 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
           sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
-      - name: Fetch the FoundationDB server and command line (Windows)
+      - name: Build the macOS export template (package_desktop.exs always exports the Mac preset too)
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/engine"
+          mkdir -p macos_template.app/Contents/MacOS
+          cp godot.macos.template_release.double.arm64 macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          chmod +x macos_template.app/Contents/MacOS/godot_macos_release.arm64
+          printf 'APPL????' > macos_template.app/Contents/PkgInfo
+          cat > macos_template.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>$binary</string>
+            <key>CFBundleName</key><string>$name</string>
+            <key>CFBundleDisplayName</key><string>$name</string>
+            <key>CFBundleIconFile</key><string>icon.icns</string>
+            <key>CFBundleIdentifier</key><string>$bundle_identifier</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$short_version</string>
+            <key>CFBundleSignature</key><string>$signature</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>NSHumanReadableCopyright</key><string>$copyright</string>
+            <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.$app_category</string>
+            <key>NSHighResolutionCapable</key>$highres
+          </dict>
+          </plist>
+          PLIST
+          (cd macos_template.app && zip -qry ../macos-template.zip .)
+          rm -rf macos_template.app
+      - name: Fetch the FoundationDB server and command line (all three OS)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           cd "$RUNNER_TEMP/engine"
-          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.windows.x86_64.exe
-          grep -E ' \*?fdbserver\.windows\.x86_64\.exe$' SHA256SUMS > server.sums
-          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.windows.x86_64.exe"; cat SHA256SUMS; exit 1; }
+          for f in fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?fdbserver\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbserver"; cat SHA256SUMS; exit 1; }
           sha256sum -c server.sums
           mkdir cli && cd cli
-          for f in fdbcli.windows.x86_64.exe SHA256SUMS; do
+          for f in fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe SHA256SUMS; do
             gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
           done
-          grep -E ' \*?fdbcli\.windows\.x86_64\.exe$' SHA256SUMS > cli.sums
-          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.windows.x86_64.exe"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?fdbcli\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbcli"; cat SHA256SUMS; exit 1; }
           sha256sum -c cli.sums
           mv fdbcli.* ..
+          chmod +x ../fdbserver.* ../fdbcli.*
       - name: Fetch the guest programs and the motion-matching clip data
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
