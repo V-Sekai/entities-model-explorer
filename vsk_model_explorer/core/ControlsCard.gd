@@ -33,6 +33,7 @@ const KEYS := {
 	"O": KEY_O,
 	"F": KEY_F,
 	"M": KEY_M,
+	"P": KEY_P,
 	"C": KEY_C,
 	"Z": KEY_Z,
 	"Space": KEY_SPACE,
