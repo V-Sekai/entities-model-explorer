@@ -313,7 +313,8 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
+                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -324,7 +325,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
             tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
             ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
           done
@@ -344,15 +345,16 @@ jobs:
           compression-level: 0
 
   verify-linux:
-    needs: package-linux
+    needs: [tag, package-linux]
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       APP: ${{ matrix.app }}
+      TAG: ${{ needs.tag.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -363,7 +365,7 @@ jobs:
         run: |
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
-          tar -xzf "$GITHUB_WORKSPACE/dist/$APP"-*-linux-x86_64.tar.gz; exe=./$APP
+          tar -xzf "$GITHUB_WORKSPACE/dist/$APP-$TAG-linux-x86_64.tar.gz"; exe=./$APP
           ls -la
           fails=0
           run() {
@@ -407,7 +409,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Linux" --generate-notes \
-            --notes "Two viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Three viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Matching Godot editor and export template included. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-linux -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -622,7 +624,8 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
+                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -633,7 +636,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "\.pck$"
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "$app.app/Contents/MacOS/$app$"
           done
@@ -683,7 +686,7 @@ jobs:
           PLIST
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization --code-signature-flags runtime "$@"; }
           tag="$TAG"
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
             zip="dist/$app-$tag-macos-arm64.zip"
             rm -rf "$S/pkg"; mkdir -p "$S/pkg"
             unzip -q "$zip" -d "$S/pkg"
@@ -708,15 +711,16 @@ jobs:
           compression-level: 0
 
   verify-macos:
-    needs: package-macos
+    needs: [tag, package-macos]
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
     runs-on: macos-latest
     timeout-minutes: 20
     env:
       APP: ${{ matrix.app }}
+      TAG: ${{ needs.tag.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -727,7 +731,7 @@ jobs:
         run: |
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
-          unzip -q "$GITHUB_WORKSPACE/dist/$APP"-*-macos-arm64.zip
+          unzip -q "$GITHUB_WORKSPACE/dist/$APP-$TAG-macos-arm64.zip"
           exe="./$APP.app/Contents/MacOS/$APP"
           chmod +x "$exe" "./$APP.app/Contents/MacOS/fdbserver" "./$APP.app/Contents/MacOS/fdbcli"
           ls -la
@@ -773,7 +777,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- macOS" --generate-notes \
-            --notes "Two viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Signed with a Developer ID and notarized. Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Three viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Signed with a Developer ID and notarized. Matching Godot editor and export template included. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-macos -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -947,7 +951,8 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/no-weights"
           tag="$TAG"
           for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights" \
+                      "mcp:skintokens-viewer-mcp:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -958,7 +963,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer walk-mode-viewer skintokens-viewer-mcp; do
             unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
             ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
           done
@@ -978,15 +983,16 @@ jobs:
           compression-level: 0
 
   verify-windows:
-    needs: package-windows
+    needs: [tag, package-windows]
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer, walk-mode-viewer, skintokens-viewer-mcp]
     runs-on: windows-latest
     timeout-minutes: 20
     env:
       APP: ${{ matrix.app }}
+      TAG: ${{ needs.tag.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -997,7 +1003,7 @@ jobs:
         run: |
           set +e
           mkdir -p "$RUNNER_TEMP/pkg with space" && cd "$RUNNER_TEMP/pkg with space"
-          7z x -y "$GITHUB_WORKSPACE/dist/$APP"-*-windows-x86_64.zip > /dev/null
+          7z x -y "$GITHUB_WORKSPACE/dist/$APP-$TAG-windows-x86_64.zip" > /dev/null
           exe=./$APP.exe
           ls -la
           fails=0
@@ -1042,7 +1048,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Windows" --generate-notes \
-            --notes "Two viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Unsigned, so SmartScreen will warn. Matching Godot editor and export template included. Verify with SHA256SUMS."
+            --notes "Three viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere; skintokens-viewer-mcp is skintokens-viewer with the MCP server/slider turned on for an AI agent to drive (every other viewer ships with it off and hidden). Unsigned, so SmartScreen will warn. Matching Godot editor and export template included. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-windows -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
