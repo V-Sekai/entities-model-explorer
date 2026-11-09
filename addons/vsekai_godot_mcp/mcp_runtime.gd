@@ -47,25 +47,12 @@ static func _resolve_port() -> int:
 
 ## Whether this build may run the MCP server at all. Always yes in the editor (so dev work and
 ## `mcp_switch_check.tscn`/`mcp_check.py`, which run the editor binary, keep working unchanged),
-## and whenever `--mcp-port=` names a port on the command line (an explicit opt-in on any build).
-## Otherwise only the dedicated "mcp" package variant (tools/package_desktop.exs) can run it — it
-## writes an `mcp.enabled` file beside the weights (Contents/Resources on macOS, same place as
-## AutoRig.gd's weights_dir()); the ordinary shipped viewers (skintokens-viewer, walk-mode-viewer,
-## kimodo-motion-viewer) never get that file, so the server stays off and the slider
-## (McpSwitch.gd) hides itself entirely in those builds.
+## and whenever `--mcp-port=` names a port on the command line (an explicit opt-in on any shipped
+## viewer). No package variant ships it on by default: skintokens-viewer, walk-mode-viewer and
+## kimodo-motion-viewer all start with the server off and the slider (McpSwitch.gd) hidden; reach
+## it with e.g. `skintokens-viewer -- --mcp-port=8789` from the command line.
 static func build_enabled() -> bool:
-	if OS.has_feature("editor"):
-		return true
-	if _resolve_port() >= 0:
-		return true
-	return FileAccess.file_exists(_marker_path())
-
-
-static func _marker_path() -> String:
-	var base := OS.get_executable_path().get_base_dir()
-	if OS.get_name() == "macOS":
-		base = base.path_join("../Resources")
-	return base.path_join("mcp.enabled")
+	return OS.has_feature("editor") or _resolve_port() >= 0
 
 
 var _cmds = MCPCommandsLib.new()
