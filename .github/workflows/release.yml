@@ -251,10 +251,9 @@ jobs:
           set -eu
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
-          mkdir -p dist "$RUNNER_TEMP/no-weights"
+          mkdir -p dist
           tag="$TAG"
-          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -265,7 +264,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for t in *.tar.gz; do tar -tzf "$t" > /dev/null; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer; do
             tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "^$app$"
             ! tar -tzf "$app-$tag-linux-x86_64.tar.gz" | grep -q "$app.pck"
           done
@@ -281,7 +280,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -341,7 +340,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Linux" --generate-notes \
-            --notes "Two viewers for Linux (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
+            --notes "Model Explorer for Linux (x86_64), built from one pck: drop in a model and the auto-rig (R) rigs it. Ships with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-linux" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-linux -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -553,10 +552,9 @@ jobs:
           set -eu
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
-          mkdir -p dist "$RUNNER_TEMP/no-weights"
+          mkdir -p dist
           tag="$TAG"
-          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -567,7 +565,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer; do
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "\.pck$"
             unzip -l "$app-$tag-macos-arm64.zip" | grep -q "$app.app/Contents/MacOS/$app$"
           done
@@ -609,7 +607,7 @@ jobs:
           PLIST
           sign() { "$RC" sign --p12-file "$S/devid.p12" --p12-password-file "$S/p12.pw" --for-notarization --code-signature-flags runtime "$@"; }
           tag="$TAG"
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer; do
             zip="dist/$app-$tag-macos-arm64.zip"
             rm -rf "$S/pkg"; mkdir -p "$S/pkg"
             unzip -q "$zip" -d "$S/pkg"
@@ -638,7 +636,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer]
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -700,7 +698,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- macOS" --generate-notes \
-            --notes "Two viewers for macOS (Apple silicon), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Signed with a Developer ID and notarized. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
+            --notes "Model Explorer for macOS (Apple silicon), built from one pck: drop in a model and the auto-rig (R) rigs it. Signed with a Developer ID and notarized. Ships with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-macos" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-macos -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -871,10 +869,9 @@ jobs:
           set -eu
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine" NOTICES="$RUNNER_TEMP/notices"
-          mkdir -p dist "$RUNNER_TEMP/no-weights"
+          mkdir -p dist
           tag="$TAG"
-          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights" \
-                      "walk-mode:walk-mode-viewer:$RUNNER_TEMP/no-weights"; do
+          for pair in "skintokens:skintokens-viewer:$RUNNER_TEMP/weights"; do
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
@@ -885,7 +882,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           for z in *.zip; do unzip -tq "$z"; done
-          for app in skintokens-viewer walk-mode-viewer; do
+          for app in skintokens-viewer; do
             unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.exe"
             ! unzip -l "$app-$tag-windows-x86_64.zip" | grep -q "$app.pck"
           done
@@ -901,7 +898,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [skintokens-viewer, walk-mode-viewer]
+        app: [skintokens-viewer]
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -962,7 +959,7 @@ jobs:
           [ "$STAGE" = release ] || flags="--prerelease"
           gh release create "$full" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $flags \
             --title "Model Explorer $full ($STAGE) -- Windows" --generate-notes \
-            --notes "Two viewers for Windows (x86_64), built from one pck: skintokens-viewer is the full Model Explorer -- drop in a model and the auto-rig (R) rigs it; walk-mode-viewer is the lighter, weight-free download for walking (M) a model already rigged elsewhere. Unsigned, so SmartScreen will warn. Both ship with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
+            --notes "Model Explorer for Windows (x86_64), built from one pck: drop in a model and the auto-rig (R) rigs it. Unsigned, so SmartScreen will warn. Ships with the MCP server off and its slider hidden; reach it with \`-- --mcp-port=8789\` from the command line. Verify with SHA256SUMS."
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$STAGE-windows" -f sha="$GITHUB_SHA" >/dev/null
           echo "Stage pointer $STAGE-windows -> $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
