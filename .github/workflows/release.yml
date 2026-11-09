@@ -317,8 +317,8 @@ jobs:
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
-            cp "$RUNNER_TEMP/out/$variant/$app"-*-linux-x86_64.tar.gz dist/
-            (cd dist && for f in "$app"-*-linux-x86_64.tar.gz; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+            cp "$RUNNER_TEMP/out/$variant/$app-linux-x86_64.tar.gz" dist/
+            (cd dist && mv "$app-linux-x86_64.tar.gz" "$app-$tag-linux-x86_64.tar.gz")
           done
           cd dist
           sha256sum * > SHA256SUMS
@@ -428,19 +428,29 @@ jobs:
           client-id: ${{ secrets.PERSONA_APP_ID }}
           private-key: ${{ secrets.PERSONA_APP_PRIVATE_KEY }}
           owner: V-Sekai-fire
-      - name: Fetch the Linux editor (to run the exporter) and the macOS double-precision engine
+      # package_desktop.exs's `package` call always lays out and exports all three OS presets
+      # (lay/13 is called once per OS unconditionally -- there is no per-platform filter), and the
+      # Linux editor binary that drives --export-release everywhere is itself dynamically linked
+      # against libfdb_c.so, so even the macOS-only job needs the full engine set on disk; only
+      # the macOS archive is kept and shipped below.
+      - name: Fetch the double-precision engine (all three OS, package_desktop.exs needs all of them)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/engine"
           cd "$RUNNER_TEMP/engine"
-          for f in godot.linuxbsd.editor.double.x86_64 godot.macos.editor.double.arm64 \
-                   godot.macos.template_release.double.arm64 libfdb_c.dylib SHA256SUMS; do
+          for f in godot.linuxbsd.editor.double.x86_64 \
+                   godot.macos.editor.double.arm64 \
+                   godot.windows.editor.double.x86_64.llvm.exe \
+                   godot.linuxbsd.template_release.double.x86_64 \
+                   godot.macos.template_release.double.arm64 \
+                   godot.windows.template_release.double.x86_64.llvm.exe \
+                   libfdb_c.so libfdb_c.dylib fdb_c.dll SHA256SUMS; do
             gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
           done
-          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.macos\.template_release\.double\.arm64|libfdb_c\.dylib)$' SHA256SUMS > wanted.sums
-          [ "$(wc -l < wanted.sums)" = 4 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?(godot\.linuxbsd\.editor\.double\.x86_64|godot\.macos\.editor\.double\.arm64|godot\.windows\.editor\.double\.x86_64\.llvm\.exe|godot\.linuxbsd\.template_release\.double\.x86_64|godot\.macos\.template_release\.double\.arm64|godot\.windows\.template_release\.double\.x86_64\.llvm\.exe|libfdb_c\.so|libfdb_c\.dylib|fdb_c\.dll)$' SHA256SUMS > wanted.sums
+          [ "$(wc -l < wanted.sums)" = 9 ] || { echo "SHA256SUMS lacks an engine file"; cat SHA256SUMS; exit 1; }
           sha256sum -c wanted.sums
           chmod +x ./godot.*
           cp "$GITHUB_WORKSPACE/LICENSE" LICENSE-model-explorer.txt
@@ -517,22 +527,24 @@ jobs:
           (cd macos_template.app && zip -qry ../macos-template.zip .)
           rm -rf macos_template.app
           unzip -l macos-template.zip
-      - name: Fetch the FoundationDB server and command line (macOS)
+      - name: Fetch the FoundationDB server and command line (all three OS)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           cd "$RUNNER_TEMP/engine"
-          gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p fdbserver.macos.arm64
-          grep -E ' \*?fdbserver\.macos\.arm64$' SHA256SUMS > server.sums
-          [ "$(wc -l < server.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbserver.macos.arm64"; cat SHA256SUMS; exit 1; }
+          for f in fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe; do
+            gh release download "$ENGINE_TAG" -R V-Sekai-fire/entities-zone -p "$f"
+          done
+          grep -E ' \*?fdbserver\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > server.sums
+          [ "$(wc -l < server.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbserver"; cat SHA256SUMS; exit 1; }
           sha256sum -c server.sums
           mkdir cli && cd cli
-          for f in fdbcli.macos.arm64 SHA256SUMS; do
+          for f in fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe SHA256SUMS; do
             gh release download "$FDB_RELEASE" -R V-Sekai-fire/datasource-foundationdb -p "$f"
           done
-          grep -E ' \*?fdbcli\.macos\.arm64$' SHA256SUMS > cli.sums
-          [ "$(wc -l < cli.sums)" = 1 ] || { echo "SHA256SUMS lacks fdbcli.macos.arm64"; cat SHA256SUMS; exit 1; }
+          grep -E ' \*?fdbcli\.(linux\.x86_64|macos\.arm64|windows\.x86_64\.exe)$' SHA256SUMS > cli.sums
+          [ "$(wc -l < cli.sums)" = 3 ] || { echo "SHA256SUMS lacks an fdbcli"; cat SHA256SUMS; exit 1; }
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
@@ -614,8 +626,8 @@ jobs:
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
-            cp "$RUNNER_TEMP/out/$variant/$app"-*-macos-arm64.zip dist/
-            (cd dist && for f in "$app"-*-macos-arm64.zip; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+            cp "$RUNNER_TEMP/out/$variant/$app-macos-arm64.zip" dist/
+            (cd dist && mv "$app-macos-arm64.zip" "$app-$tag-macos-arm64.zip")
           done
           cd dist
           sha256sum * > SHA256SUMS
@@ -939,8 +951,8 @@ jobs:
             variant="${pair%%:*}"; rest="${pair#*:}"
             app="${rest%%:*}"; w="${rest#*:}"
             elixir tools/package_desktop.exs package "$RUNNER_TEMP/out" "$w" "$variant"
-            cp "$RUNNER_TEMP/out/$variant/$app"-*-windows-x86_64.zip dist/
-            (cd dist && for f in "$app"-*-windows-x86_64.zip; do mv "$f" "$app-$tag-${f#"$app"-}"; done)
+            cp "$RUNNER_TEMP/out/$variant/$app-windows-x86_64.zip" dist/
+            (cd dist && mv "$app-windows-x86_64.zip" "$app-$tag-windows-x86_64.zip")
           done
           cd dist
           sha256sum * > SHA256SUMS
