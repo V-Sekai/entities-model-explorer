@@ -58,9 +58,13 @@ func _check(path: String) -> String:
 	sb.load_buffer(FileAccess.get_file_as_bytes(UsdImport.ELF))
 	sb.vmcall("usd_init")
 	var bytes := FileAccess.get_file_as_bytes(path)
-	for at in range(0, bytes.size(), UsdImport.CHUNK):
-		sb.vmcall("usd_push", bytes.slice(at, at + UsdImport.CHUNK))
-	var line := str(sb.vmcall("usd_open_staged"))
+	var line := ""
+	if path.get_extension().to_lower() == "usdz":
+		for at in range(0, bytes.size(), UsdImport.CHUNK):
+			sb.vmcall("usd_push", bytes.slice(at, at + UsdImport.CHUNK))
+		line = str(sb.vmcall("usd_open_staged"))
+	else:
+		line = UsdImport.stream_document(sb, path)
 	var tris := 0
 	var meshes := int(sb.vmcall("usd_mesh_count"))
 	for i in meshes:
