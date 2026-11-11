@@ -68,7 +68,6 @@ defmodule PackageDesktop do
                 AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FdbServer.gd
                 FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd
                 clips.tsv walk.f32 mm/skeleton.txt)
-  @station_files ~w(station.gd slug.double.elf texture_means.json)
 
   def main(argv) do
     case run(argv) do
@@ -138,7 +137,6 @@ defmodule PackageDesktop do
          persona = req_env!("PERSONA_ELF"),
          {:ok, true} <- double_precision?(persona, "persona_ask_json"),
          :ok <- File.cp(persona, Path.join(src, "persona.elf")),
-         :ok <- copy_station(src),
          :ok <- copy_mm_data(src),
          {:ok, godot} <- godot_bin(),
          {:ok, _} <- run(godot, hl_args() ++ ["--path", src, "--import"]),
@@ -148,8 +146,7 @@ defmodule PackageDesktop do
          {:ok, export_log} <- run(godot, hl_args() ++ ["--path", src, "--export-pack", "Linux", pck_path]),
          :ok <- (if String.contains?(export_log, "SCRIPT ERROR"), do: {:error, "SCRIPT ERROR in export.log:\n#{export_log}"}, else: :ok),
          {:ok, pck_bin} <- File.read(pck_path),
-         :ok <- contains_all(pck_bin, @pck_files, "pck"),
-         :ok <- (if System.get_env("STATION_DIR"), do: contains_all(pck_bin, @station_files, "pck (campus)"), else: :ok) do
+         :ok <- contains_all(pck_bin, @pck_files, "pck") do
       IO.puts("PCK-OK #{byte_size(pck_bin)} bytes")
       :ok
     end
@@ -262,25 +259,6 @@ defmodule PackageDesktop do
       if sbxv and has_marker,
         do: {:ok, true},
         else: {:error, "#{path} is not a double-precision build with #{marker}"}
-    end
-  end
-
-  # The campus: the station addon and its slug guests from a checkout of
-  # V-Sekai-fire/entities-sakuragaoka-station (STATION_DIR, pinned by the release). Unset, the pck
-  # has no campus and the viewer shows no P row.
-  defp copy_station(src) do
-    case System.get_env("STATION_DIR") do
-      nil -> :ok
-      "" -> :ok
-      dir ->
-        addons = Path.join(src, "addons")
-        File.mkdir_p!(addons)
-
-        with {:ok, _} <- File.cp_r(Path.join(dir, "addons/sakuragaoka_station"), Path.join(addons, "sakuragaoka_station")),
-             :ok <- File.cp(Path.join(dir, "slug.elf"), Path.join(src, "slug.elf")),
-             :ok <- File.cp(Path.join(dir, "slug.double.elf"), Path.join(src, "slug.double.elf")) do
-          :ok
-        end
     end
   end
 

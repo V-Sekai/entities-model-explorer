@@ -198,15 +198,6 @@ jobs:
             curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
               "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
           done
-      - name: Fetch the campus (Sakuragaoka Station)
-        env:
-          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
-        run: |
-          set -eu
-          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
-          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
-          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
-          test -f "$RUNNER_TEMP/station/slug.double.elf"
       - name: Notices
         run: |
           set -eu
@@ -244,7 +235,6 @@ jobs:
                  HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
-          export STATION_DIR="$RUNNER_TEMP/station"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package Linux
         run: |
@@ -499,15 +489,6 @@ jobs:
             curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
               "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
           done
-      - name: Fetch the campus (Sakuragaoka Station)
-        env:
-          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
-        run: |
-          set -eu
-          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
-          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
-          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
-          test -f "$RUNNER_TEMP/station/slug.double.elf"
       - name: Notices
         run: |
           set -eu
@@ -545,7 +526,6 @@ jobs:
                  HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
-          export STATION_DIR="$RUNNER_TEMP/station"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package macOS
         run: |
@@ -816,15 +796,6 @@ jobs:
             curl -fsSL -o "$RUNNER_TEMP/weights/$f" \
               "https://huggingface.co/chibifire/SkinTokens-GGUF-BF16/resolve/main/$f"
           done
-      - name: Fetch the campus (Sakuragaoka Station)
-        env:
-          STATION_SHA: d9c0f0f916c1e7280fab4f09fc685c6ea679d814
-        run: |
-          set -eu
-          git clone -q --filter=blob:none https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git "$RUNNER_TEMP/station"
-          git -C "$RUNNER_TEMP/station" checkout -q "$STATION_SHA"
-          test -f "$RUNNER_TEMP/station/addons/sakuragaoka_station/station.tscn"
-          test -f "$RUNNER_TEMP/station/slug.double.elf"
       - name: Notices
         run: |
           set -eu
@@ -862,7 +833,6 @@ jobs:
                  HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
           export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
-          export STATION_DIR="$RUNNER_TEMP/station"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package Windows
         run: |

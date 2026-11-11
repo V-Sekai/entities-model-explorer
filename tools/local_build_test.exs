@@ -19,7 +19,6 @@ defmodule LocalBuildTest do
                    fdbserver.linux.x86_64 fdbserver.macos.arm64 fdbserver.windows.x86_64.exe
                    SHA256SUMS)
   @cli_files ~w(fdbcli.linux.x86_64 fdbcli.macos.arm64 fdbcli.windows.x86_64.exe)
-  @station_sha "d9c0f0f916c1e7280fab4f09fc685c6ea679d814"
   @app "skintokens-viewer"
   @weights ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)
 
@@ -71,7 +70,7 @@ defmodule LocalBuildTest do
 
   defp maybe_fetch(true, _here, cache, engine, _notices, _tag, _fdb) do
     if File.regular?(Path.join(engine, "godot.linuxbsd.editor.double.x86_64")) do
-      IO.puts("== --skip-fetch: reusing #{engine}, #{Path.join(cache, "mm-repo")}, #{Path.join(cache, "station")}")
+      IO.puts("== --skip-fetch: reusing #{engine}, #{Path.join(cache, "mm-repo")}")
       :ok
     else
       maybe_fetch(false, nil, cache, engine, nil, nil, nil)
@@ -105,13 +104,9 @@ defmodule LocalBuildTest do
          _ <- IO.puts("== fetching the guest programs and walk data"),
          {:ok, _} <- System.cmd("tools/fetch_guest_assets.sh", [], cd: here, into: IO.stream(:stdio, :line)),
          :ok <- File.rm_rf(Path.join(cache, "mm-repo")),
-         :ok <- File.rm_rf(Path.join(cache, "station")),
          {:ok, _} <- run("git", ~w(clone -q --depth 1 --filter=blob:none --sparse
                          https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git #{Path.join(cache, "mm-repo")})),
          {:ok, _} <- run("git", ["-C", Path.join(cache, "mm-repo"), "sparse-checkout", "set", "data"]),
-         {:ok, _} <- run("git", ["clone", "-q", "--filter=blob:none",
-                         "https://github.com/V-Sekai-fire/entities-sakuragaoka-station.git", Path.join(cache, "station")]),
-         {:ok, _} <- run("git", ["-C", Path.join(cache, "station"), "checkout", "-q", @station_sha]),
          :ok <- File.mkdir_p(notices),
          {:ok, _} <- File.copy(Path.join(here, "LICENSE"), Path.join(notices, "LICENSE.md")),
          :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, skintokens viewer (local build test)\n"),
@@ -191,7 +186,6 @@ defmodule LocalBuildTest do
       {"MUJOCO_ELF", Path.join(here, "mujoco.elf")},
       {"PERSONA_ELF", Path.join(here, "persona.elf")},
       {"MM_DATA", "#{Path.join(cache, "mm-repo/data/kimodo-locomotion")}:#{Path.join(cache, "mm-repo/data/o3de-motionmatching")}"},
-      {"STATION_DIR", Path.join(cache, "station")}
     ]
 
     Enum.each(env, fn {k, v} -> System.put_env(k, v) end)
