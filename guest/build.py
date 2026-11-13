@@ -23,8 +23,7 @@ guest_elfs = [pathlib.Path(x).resolve() for x in sys.argv[5:]]
 PLAIN_FILES = {'vsk_model_explorer/core/UsdImport.gd', 'vsk_model_explorer/core/VrmExport.gd',
                'vsk_model_explorer/core/AutoRig.gd', 'vsk_model_explorer/core/Bintr.gd',
                'vsk_model_explorer/core/FaceBlink.gd', 'vsk_model_explorer/core/FaceRoles.gd',
-               'vsk_model_explorer/core/Motion.gd',
-               'vsk_model_explorer/core/MotionMatch.gd', 'vsk_model_explorer/core/MotionMatchNode.gd'}
+               'vsk_model_explorer/core/Motion.gd'}
 PLAIN_DIRS = ('addons/vrm/',)
 overlay = here / 'overlay'
 if work.exists():
@@ -33,26 +32,6 @@ shutil.copytree(src, work, ignore=shutil.ignore_patterns('.git', '.godot', '*.ui
 shutil.copytree(addon, work / 'addons/godot_sandbox', dirs_exist_ok=True)
 for e in guest_elfs:
     shutil.copy(e, work / e.name)
-# Walk mode's clips (MM_DATA, ':'-separated clip dirs as in tools/package_desktop.sh) go to
-# res://motion/mm: one .f32 per clip, clips.tsv, and the SOMA skeleton of the first clip.
-import os
-mm_sets = [d for d in os.environ.get('MM_DATA', '').split(':') if d]
-if mm_sets:
-    mm = work / 'motion/mm'
-    mm.mkdir(parents=True, exist_ok=True)
-    keys, first = [], None
-    for d in mm_sets:
-        for c in sorted(p for p in pathlib.Path(d).iterdir() if p.is_dir()):
-            shutil.copy(c / 'transforms.f32', mm / (c.name + '.f32'))
-            if (c / 'phase.f32').exists():
-                shutil.copy(c / 'phase.f32', mm / (c.name + '.phase.f32'))
-            # Same clips.tsv as tools/package_desktop.sh: "<key>\tloop" for a clip cut as a loop.
-            keys.append(c.name + ('\tloop' if (c / 'loop.txt').exists() else ''))
-            first = first or c
-    (mm / 'clips.tsv').write_text(''.join(k + '\n' for k in keys))
-    (mm / 'skeleton.txt').write_text(''.join((first / 'skeleton.txt').read_text().splitlines(True)[3:]))
-    shutil.copy(first / 'parents.txt', mm / 'parents.txt')
-    print('MM clips', len(keys))
 if overlay:
     shutil.copytree(overlay, work, dirs_exist_ok=True)
 ep = work / 'export_presets.cfg'
