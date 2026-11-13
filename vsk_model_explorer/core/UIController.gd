@@ -100,7 +100,6 @@ func _card_list(tree: Tree, title: String) -> void:
 
 
 func _process(_delta):
-	# L, not W: W is walk forward in walk mode (MotionMatch.gd), and one key must not do both.
 	if Input.is_action_just_pressed("toggle_wireframe"):
 		wireframe_on = not wireframe_on
 		_set_wireframe(wireframe_on)
@@ -110,11 +109,7 @@ func _process(_delta):
 	if Input.is_action_just_pressed("explode_meshes"):
 		_set_exploded(not exploded)
 
-	# X is prone in walk mode (MotionMatch.gd), so it does nothing there.
-	if (
-		Input.is_action_just_pressed("toggle_xray")
-		and get_tree().get_nodes_in_group("walk_mode").is_empty()
-	):
+	if Input.is_action_just_pressed("toggle_xray"):
 		_set_xray(not xray_on)
 
 	if Input.is_action_just_pressed("toggle_grid"):
@@ -770,9 +765,6 @@ func _on_mesh_clicked(
 	_shape_idx: int,
 	mesh: MeshInstance3D
 ):
-	# In walk mode a click walks the model there (MotionMatch.gd); it opens no mesh details.
-	if not get_tree().get_nodes_in_group("walk_mode").is_empty():
-		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if meshViewer != null and not meshViewer.is_queued_for_deletion():
 			meshViewer.queue_free()

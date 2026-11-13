@@ -2,15 +2,13 @@
 # Build the desktop viewer packages with the auto-rig and its weights.
 #
 #   elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
-#                                                     lay out and archive the three packages
+#   elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
+#                                                     lay out and archive the two packages
 #                                                     in <out dir>/<viewer>/ with SHA256SUMS
 #
-# One pck, three viewers. Each feature is on when its weights are in the package's w folder:
+# One pck, two viewers. Each feature is on when its weights are in the package's w folder:
 #   skintokens     skintokens-viewer, the rig weights (R auto-rigs), no Kimodo (the default)
 #   kimodo-motion  kimodo-motion-viewer, the Kimodo weights (the Motion list), no rig weights
-#   walk-mode      walk-mode-viewer, no weights (M walks a rigged model; R is unused) --
-#                  the lighter download for someone who only wants to walk a model rigged
 #                  elsewhere, shipped alongside skintokens-viewer in every release
 #
 # The MCP server and its on/off slider are off and hidden in every viewer by default
@@ -38,14 +36,7 @@
 #            Unset, `pck` downloads it with gh from the newest green `guest` run of
 #            interactor-headfit's ${HEADFIT_BRANCH:-main}, and writes where it came from to
 #            <out dir>/headfit.elf.source.txt
-#   MM_ELF   mm.elf (interactor-motion-matching-guest), the motion-matching controller (M)
-#   MUJOCO_ELF  mujoco.elf, double-precision build (mujoco-sandbox-demo project/plans/
-#            mujoco.double.elf), the obstacle course's colliders
 #   PERSONA_ELF  persona.elf (interactor-taskweft-persona), the persona's plan for a goal
-#   MM_DATA  that repo's clip dirs, ':'-separated (data/kimodo-locomotion:data/o3de-motionmatching):
-#            one dir per clip (transforms.f32, skeleton.txt, parents.txt, and loop.txt for a
-#            steady gait cut as a loop), the controller's pose
-#            database; written into res://motion/mm/
 #   NOTICES  dir with LICENSE.md, NOTICE and CITATION.cff for the viewer, as written by
 #            tools/licences/licgen.py and published in its HF download repo
 #            (chibifire/interactor-skintokens-viewer or chibifire/interactor-kimodo-motion-viewer).
@@ -64,10 +55,9 @@
 
 defmodule PackageDesktop do
   @pck_name "skintokens-viewer.pck"
-  @pck_files ~w(skintokens.elf usd.elf motion.elf headfit.elf mm.elf liltoon.tar
-                AssetPackageExport.sgd mujoco.elf colliders.json AutoRig.gd FdbServer.gd
-                FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd MotionMatch.gd Bintr.gd
-                clips.tsv walk.f32 mm/skeleton.txt)
+  @pck_files ~w(skintokens.elf usd.elf motion.elf headfit.elf liltoon.tar
+                AssetPackageExport.sgd AutoRig.gd FdbServer.gd
+                FaceBlink.gd FaceRoles.gd UsdImport.gd Motion.gd Bintr.gd)
 
   def main(argv) do
     case run(argv) do
@@ -87,8 +77,8 @@ defmodule PackageDesktop do
   defp usage do
     """
     elixir tools/package_desktop.exs pck <out dir>            export skintokens-viewer.pck from HEAD
-    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion|walk-mode]
-                                                      lay out and archive the three packages
+    elixir tools/package_desktop.exs package <out dir> <w> [skintokens|kimodo-motion]
+                                                      lay out and archive the two packages
                                                       in <out dir>/<viewer>/ with SHA256SUMS
     """
   end
@@ -130,14 +120,9 @@ defmodule PackageDesktop do
          {:ok, headfit} <- headfit_elf(out),
          {:ok, true} <- double_precision?(headfit, "hf_anime_shape"),
          :ok <- File.cp(headfit, Path.join(src, "headfit.elf")),
-         :ok <- File.cp(req_env!("MM_ELF"), Path.join(src, "mm.elf")),
-         mujoco = req_env!("MUJOCO_ELF"),
-         {:ok, true} <- double_precision?(mujoco, "mjc_player_band"),
-         :ok <- File.cp(mujoco, Path.join(src, "mujoco.elf")),
          persona = req_env!("PERSONA_ELF"),
          {:ok, true} <- double_precision?(persona, "persona_ask_json"),
          :ok <- File.cp(persona, Path.join(src, "persona.elf")),
-         :ok <- copy_mm_data(src),
          {:ok, godot} <- godot_bin(),
          {:ok, _} <- run(godot, hl_args() ++ ["--path", src, "--import"]),
          {:ok, pack_log} <- run(godot, hl_args() ++ ["--path", src, "--script", "tools/liltoon_pack.gd"]),
@@ -262,39 +247,6 @@ defmodule PackageDesktop do
     end
   end
 
-  defp copy_mm_data(src) do
-    mm = Path.join(src, "motion/mm")
-    File.mkdir_p!(mm)
-    sets = (req_env!("MM_DATA") |> String.split(":", trim: true))
-
-    dirs =
-      Enum.flat_map(sets, fn set ->
-        set |> Path.join("*") |> Path.wildcard() |> Enum.filter(&File.dir?/1) |> Enum.sort()
-      end)
-
-    if dirs == [], do: raise("MM_DATA names no clip dirs")
-
-    clips =
-      Enum.map(dirs, fn d ->
-        k = Path.basename(d)
-        File.cp!(Path.join(d, "transforms.f32"), Path.join(mm, "#{k}.f32"))
-
-        phase = Path.join(d, "phase.f32")
-        if File.exists?(phase), do: File.cp!(phase, Path.join(mm, "#{k}.phase.f32"))
-
-        if File.exists?(Path.join(d, "loop.txt")), do: "#{k}\tloop", else: k
-      end)
-
-    File.write!(Path.join(mm, "clips.tsv"), Enum.join(clips, "\n") <> "\n")
-
-    first = hd(dirs)
-    # Drop the first three lines (the gdenv/Variant header Godot's binary writer prepends).
-    skeleton = File.read!(Path.join(first, "skeleton.txt")) |> String.split("\n") |> Enum.drop(3) |> Enum.join("\n")
-    File.write!(Path.join(mm, "skeleton.txt"), skeleton)
-    File.cp!(Path.join(first, "parents.txt"), Path.join(mm, "parents.txt"))
-    :ok
-  end
-
   defp contains_all(bin, names, what) do
     missing = Enum.reject(names, &(:binary.match(bin, &1) != :nomatch))
 
@@ -307,18 +259,10 @@ defmodule PackageDesktop do
 
   @variants %{
     "skintokens" => {"skintokens-viewer", ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)},
-    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)},
-    "walk-mode" => {"walk-mode-viewer", []}
+    "kimodo-motion" => {"kimodo-motion-viewer", ~w(Kimodo-SOMA-RP-v1.1-gguf/kimodo-soma-rp-v1.1.gguf)}
   }
 
-  # So walk-mode-viewer and skintokens-viewer are tellable apart in the Finder/Dock/taskbar at a
-  # glance (iFire: "make sure walk and skintoken have different icons"), not just by their window
-  # title -- walk-mode gets a distinct hue-shifted icon (app_icon_walkmode.*), every other variant
-  # keeps the default app_icon.* (the blue cube).
   @icon_dir "vsk_model_explorer/resource/icon"
-  @icons %{
-    "walk-mode" => {"app_icon_walkmode.icns", "app_icon_walkmode.ico"}
-  }
   @default_icons {"app_icon.icns", "app_icon.ico"}
 
   defp package(out, w, variant) do
@@ -372,7 +316,7 @@ defmodule PackageDesktop do
     File.write(path, Enum.join(patched, "\n"))
   end
 
-  defp icon_files(variant), do: Map.get(@icons, variant, @default_icons)
+  defp icon_files(_variant), do: @default_icons
 
   defp need_files(dir, names, what) do
     missing = Enum.reject(names, &File.exists?(Path.join(dir, &1)))

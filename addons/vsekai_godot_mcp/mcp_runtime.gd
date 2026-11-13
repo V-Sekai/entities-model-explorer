@@ -48,8 +48,8 @@ static func _resolve_port() -> int:
 ## Whether this build may run the MCP server at all. Always yes in the editor (so dev work and
 ## `mcp_switch_check.tscn`/`mcp_check.py`, which run the editor binary, keep working unchanged),
 ## and whenever `--mcp-port=` names a port on the command line (an explicit opt-in on any shipped
-## viewer). No package variant ships it on by default: skintokens-viewer, walk-mode-viewer and
-## kimodo-motion-viewer all start with the server off and the slider (McpSwitch.gd) hidden; reach
+## viewer). No package variant ships it on by default: skintokens-viewer and
+## kimodo-motion-viewer both start with the server off and the slider (McpSwitch.gd) hidden; reach
 ## it with e.g. `skintokens-viewer -- --mcp-port=8789` from the command line.
 static func build_enabled() -> bool:
 	return OS.has_feature("editor") or _resolve_port() >= 0

@@ -101,12 +101,8 @@ defmodule LocalBuildTest do
          :ok <- File.mkdir_p(cli),
          :ok <- gh_release_download(fdb_release, "V-Sekai-fire/datasource-foundationdb", @cli_files, cli),
          :ok <- move_cli(cli, engine),
-         _ <- IO.puts("== fetching the guest programs and walk data"),
+         _ <- IO.puts("== fetching the guest programs"),
          {:ok, _} <- System.cmd("tools/fetch_guest_assets.sh", [], cd: here, into: IO.stream(:stdio, :line)),
-         :ok <- File.rm_rf(Path.join(cache, "mm-repo")),
-         {:ok, _} <- run("git", ~w(clone -q --depth 1 --filter=blob:none --sparse
-                         https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git #{Path.join(cache, "mm-repo")})),
-         {:ok, _} <- run("git", ["-C", Path.join(cache, "mm-repo"), "sparse-checkout", "set", "data"]),
          :ok <- File.mkdir_p(notices),
          {:ok, _} <- File.copy(Path.join(here, "LICENSE"), Path.join(notices, "LICENSE.md")),
          :ok <- File.write(Path.join(notices, "NOTICE"), "V-Sekai Model Explorer, skintokens viewer (local build test)\n"),
@@ -182,10 +178,7 @@ defmodule LocalBuildTest do
       {"USD_ELF", Path.join(here, "usd.elf")},
       {"MOTION_ELF", Path.join(here, "motion.elf")},
       {"HEADFIT_ELF", Path.join(here, "headfit.elf")},
-      {"MM_ELF", Path.join(here, "mm.elf")},
-      {"MUJOCO_ELF", Path.join(here, "mujoco.elf")},
       {"PERSONA_ELF", Path.join(here, "persona.elf")},
-      {"MM_DATA", "#{Path.join(cache, "mm-repo/data/kimodo-locomotion")}:#{Path.join(cache, "mm-repo/data/o3de-motionmatching")}"},
     ]
 
     Enum.each(env, fn {k, v} -> System.put_env(k, v) end)

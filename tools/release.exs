@@ -28,14 +28,12 @@
 #   engine     newest *-double.* release of V-Sekai-fire/service-godot-build (SHA256SUMS checked)
 #   sandbox    newest green Builds run on V-Sekai-fire/godot-sandbox main
 #   guests     newest green guest run on main of interactor-skintokens-guest, -motion-guest,
-#              -motion-matching-guest (and its clip data at the same commit), interactor-headfit
-#   mujoco     project/plans/mujoco.double.elf at interactor-mujoco-sandbox-demo origin/main
+#              interactor-headfit
 #   usd        usd.elf has no CI build: it is carried from the published Model Explorer viewer's pck
 # Gates, in order (the run stops at the first failure and says which):
 #   each ELF equals the hash written when it was fetched, and a planted corrupt ELF must fail that
 #   check; each ELF in the exported pck equals its input; the Windows zip (Wine), the macOS image and
-#   the Linux tar start and report their features; the viewer walks three-vrm-girl.vrm
-#   (VRM 0.x, six skins: MOVE-OK) on Windows (Wine) and macOS; the staged folder passes
+#   the Linux tar start and report their features; the staged folder passes
 #   `shasum -c`, and a planted tampered copy must fail it.
 # Releases are tagged v<YYYYMMDD>-dev.N (RFD66606-2293), then -beta.N, -rc.N and the bare
 # v<YYYYMMDD>; the date is the day the run starts. A run takes each viewer's published tag
@@ -57,7 +55,7 @@ defmodule Release do
       repo: "chibifire/interactor-skintokens-viewer", space: "chibifire/skintokens-auto-rig", rig: true, mac_zip: true,
       web: false}
   ]
-  @elfs ~w(skintokens.elf usd.elf motion.elf headfit.elf mm.elf mujoco.elf persona.elf)
+  @elfs ~w(skintokens.elf usd.elf motion.elf headfit.elf persona.elf)
   @weights ~w(mesh-encoder.gguf skin-vae.gguf tokenrig.gguf)
   @editor "godot.macos.editor.double.arm64"
   @wine_version "11.18"
@@ -66,7 +64,6 @@ defmodule Release do
   @guests [
     {"interactor-skintokens-guest", "skintokens-elf-", "skintokens.elf"},
     {"interactor-motion-guest", "motion-elf-", "motion.elf"},
-    {"interactor-motion-matching-guest", "mm-elf-", "mm.elf"},
     {"interactor-headfit", "headfit-elf-", "headfit.elf"},
     {"interactor-taskweft-persona", "persona-elf-", "persona.elf"}
   ]
@@ -208,9 +205,7 @@ defmodule Release do
              e -> {:halt, e}
            end
          end),
-         :ok <- mujoco(ctx, d),
-         :ok <- usd_from_published(ctx, d),
-         :ok <- mm_data(ctx, d) do
+         :ok <- usd_from_published(ctx, d) do
       write_sums(d, @elfs)
     end
   end
@@ -225,23 +220,7 @@ defmodule Release do
          tmp = Path.join(d, "ci-" <> repo),
          {:ok, _} <- cap("gh", ["run", "download", run, "-R", r, "-n", name, "-D", tmp], gh_env(tok)),
          {:ok, _} <- File.copy(Path.join(tmp, file), Path.join(d, file)) do
-      if repo == "interactor-motion-matching-guest", do: File.write(Path.join(d, "mm.sha"), sha)
       source(ctx, "#{file} #{r} #{Map.get(ctx.branches, repo, "main")} guest run #{run} artifact #{name}")
-    end
-  end
-
-  defp mujoco(ctx, d) do
-    c = Path.join(ctx.root, "3-interactor/mujoco-sandbox-demo")
-    out = Path.join(d, "mujoco.elf")
-
-    with {:ok, _} <- cap("git", ["-C", c, "fetch", "-q", "origin", "main"]),
-         {:ok, sha} <- cap("git", ["-C", c, "rev-parse", "FETCH_HEAD"]),
-         {:ok, _} <- cap("sh", ["-c", "git -C \"$1\" cat-file blob \"$2:project/plans/mujoco.double.elf\" > \"$3\"", "sh", c, String.trim(sha), out]),
-         {:ok, %{size: n}} when n > 100_000 <- File.stat(out) do
-      source(ctx, "mujoco.elf interactor-mujoco-sandbox-demo #{String.slice(sha, 0, 12)} project/plans/mujoco.double.elf")
-    else
-      {:ok, %{size: n}} -> {:error, "mujoco.double.elf is #{n} bytes (a git-LFS pointer?)"}
-      e -> e
     end
   end
 
@@ -265,19 +244,6 @@ defmodule Release do
     else
       {:ok, other} when is_binary(other) -> {:error, "the published skintokens-viewer zip does not match its SHA256SUMS (#{String.slice(other, 0, 12)})"}
       e -> e
-    end
-  end
-
-  defp mm_data(ctx, d) do
-    c = Path.join(ctx.root, "3-interactor/motion-matching-guest")
-    out = Path.join(d, "mmg")
-
-    with {:ok, sha} <- File.read(Path.join(d, "mm.sha")),
-         {:ok, _} <- cap("git", ["-C", c, "fetch", "-q", "origin", sha]),
-         :ok <- clean(out),
-         {:ok, _} <- cap("sh", ["-c", "git -C \"$1\" archive \"$2\" data | tar -x -C \"$3\"", "sh", c, sha, out]),
-         :ok <- need(Path.join(out, "data"), ~w(kimodo-locomotion o3de-motionmatching)) do
-      source(ctx, "clip data interactor-motion-matching-guest #{String.slice(sha, 0, 12)} data/")
     end
   end
 
@@ -321,8 +287,7 @@ defmodule Release do
          {:ok, _} <- cap("git", ["-C", me, "worktree", "add", "--detach", src, sha]),
          :ok <- need(src, ~w(tools/licences/licgen.py)),
          {:ok, {_cmd, pkg_path}} <- pkg_script(src),
-         {:ok, pkg} <- File.read(pkg_path),
-         true <- String.contains?(pkg, "walk-mode") || {:error, "#{ctx.ref} predates the walk-mode package (#{Path.basename(pkg_path)})"} do
+         {:ok, _pkg} <- File.read(pkg_path) do
       source(ctx, "viewer source V-Sekai-fire/entities-model-explorer #{sha} (#{ctx.ref})")
 
       Enum.reduce_while(@viewers, :ok, fn v, _ ->
@@ -346,7 +311,6 @@ defmodule Release do
   def step_pck(ctx) do
     out = Path.join(ctx.dir, "pck")
     elf = Path.join(ctx.dir, "elf")
-    mmg = Path.join(elf, "mmg/data")
 
     env = [
       {"ENGINE", Path.join(ctx.dir, "engine")},
@@ -356,10 +320,7 @@ defmodule Release do
       {"USD_ELF", Path.join(elf, "usd.elf")},
       {"MOTION_ELF", Path.join(elf, "motion.elf")},
       {"HEADFIT_ELF", Path.join(elf, "headfit.elf")},
-      {"MM_ELF", Path.join(elf, "mm.elf")},
-      {"MUJOCO_ELF", Path.join(elf, "mujoco.elf")},
-      {"PERSONA_ELF", Path.join(elf, "persona.elf")},
-      {"MM_DATA", Path.join(mmg, "kimodo-locomotion") <> ":" <> Path.join(mmg, "o3de-motionmatching")}
+      {"PERSONA_ELF", Path.join(elf, "persona.elf")}
     ]
 
     with :ok <- check_sums(elf, @elfs),
@@ -598,12 +559,6 @@ defmodule Release do
 
   defp girl(ctx), do: Path.join(ctx.root, "3-interactor/test-godot-vrm-motion-checker/fire_motion_check/art/three_girl/three-vrm-girl.vrm")
 
-  # The walk test must make the moves, not reuse an earlier run's.
-  defp forget_moves do
-    for f <- Path.wildcard(Path.join(wine_root(), "prefix/drive_c/users/*/AppData/Roaming/Godot/app_userdata/ModelExplorer/**/three-vrm-girl*")), do: File.rm(f)
-    :ok
-  end
-
   def step_test_windows(ctx) do
     with :ok <- ensure_wine() do
       Enum.reduce_while(@viewers, :ok, fn v, _ ->
@@ -613,11 +568,9 @@ defmodule Release do
         with :ok <- clean(d),
              {:ok, _} <- cap("unzip", ["-q", Path.join([ctx.dir, "pck", v.key, "#{v.app}-windows-x86_64.zip"]), "-d", d]),
              {:ok, _} <- File.copy(girl(ctx), Path.join(d, "three-vrm-girl.vrm")),
-             {:ok, _} <- win_run(exe, ["--features-quit"], "VIEWER-FEATURES rig=#{v.rig}", Path.join(d, "features.log")),
-             :ok <- forget_moves(),
-             {:ok, peak} <- win_run(exe, ["three-vrm-girl.vrm", "--move-quit"], "MOVE-OK", Path.join(d, "walk.log")),
-             true <- peak < @max_private_mb || {:error, "#{v.key} walk under Wine peaked at #{peak} MB (limit #{@max_private_mb})"} do
-          IO.puts("  windows (Wine, Apple GPU) #{v.key}: features, walk OK, peak #{peak} MB resident")
+             {:ok, peak} <- win_run(exe, ["--features-quit"], "VIEWER-FEATURES rig=#{v.rig}", Path.join(d, "features.log")),
+             true <- peak < @max_private_mb || {:error, "#{v.key} features run under Wine peaked at #{peak} MB (limit #{@max_private_mb})"} do
+          IO.puts("  windows (Wine, Apple GPU) #{v.key}: features OK, peak #{peak} MB resident")
           {:cont, :ok}
         else
           e -> {:halt, e}
@@ -661,10 +614,7 @@ defmodule Release do
     if grep -q '^SIGNED' signed.txt; then spctl -a -t exec "$A"; fi
     open -n -W --stdout "$PWD/features.log" --stderr "$PWD/features.err" "$A" --args -- --features-quit
     grep -q "VIEWER-FEATURES rig=#{v.rig}" features.log || { echo "no VIEWER-FEATURES rig=#{v.rig}"; tail -5 features.log; exit 1; }
-    U="$HOME/Library/Application Support/Godot/app_userdata/ModelExplorer"; rm -f "$U"/three-vrm-girl* "$U"/moves/three-vrm-girl*
-    open -n -W --stdout "$PWD/walk.log" --stderr "$PWD/walk.err" "$A" --args -- "$T/three-vrm-girl.vrm" --move-quit
-    grep -q MOVE-OK walk.log || { echo "no MOVE-OK (stdout only: stderr goes to walk.err so the two cannot interleave)"; grep -E 'MOVE-(FAIL|STEP)' walk.log | tail -5; exit 1; }
-    echo "MAC-TEST-OK $(grep -c 'MOVE-STEP.* ok$' walk.log) walk steps ok, $(cat signed.txt)"
+    echo "MAC-TEST-OK $(cat signed.txt)"
     """
   end
 
@@ -707,13 +657,12 @@ defmodule Release do
   # @emsdk_version; the compiler (gdscript_to_riscv) is built from its main. Both live in a cache
   # folder (RELEASE_CACHE) that later runs build on incrementally; their commits go to SOURCES.txt.
   @emsdk_version "6.0.12"
-  @web_elfs ~w(skintokens.elf usd.elf mm.elf mujoco.elf headfit.elf persona.elf)
+  @web_elfs ~w(skintokens.elf usd.elf headfit.elf persona.elf)
 
   def step_web(ctx) do
     cache = cache_dir()
     d = Path.expand(Path.join(ctx.dir, "web"))
-    mmg = Path.join([ctx.dir, "elf", "mmg", "data"])
-    env = [{"MM_DATA", Path.join(mmg, "kimodo-locomotion") <> ":" <> Path.join(mmg, "o3de-motionmatching")}]
+    env = []
 
     with :ok <- File.mkdir_p(cache),
          :ok <- clean(d),
@@ -741,25 +690,18 @@ defmodule Release do
     end
   end
 
-  # Each guest ELF in the web pck equals the release's ELF, and the walk clips are in it.
+  # Each guest ELF in the web pck equals the release's ELF.
   defp web_pck_check(ctx, files) do
     elf = Path.join(ctx.dir, "elf")
 
-    with :ok <- Enum.reduce_while(@web_elfs, :ok, fn f, _ ->
-           case {File.read(Path.join(elf, f)), Map.fetch(files, f)} do
-             {{:ok, b}, {:ok, b}} -> {:cont, :ok}
-             {{:ok, _}, {:ok, _}} -> {:halt, {:error, "#{f} in the web pck differs from its input"}}
-             {{:ok, _}, :error} -> {:halt, {:error, "the web pck lacks #{f}"}}
-             {e, _} -> {:halt, e}
-           end
-         end),
-         {:ok, tsv} <- Map.fetch(files, "motion/mm/clips.tsv") |> ok_or("the web pck lacks motion/mm/clips.tsv"),
-         n = tsv |> String.split("\n", trim: true) |> length(),
-         loops = tsv |> String.split("\n", trim: true) |> Enum.count(&String.ends_with?(&1, "\tloop")),
-         true <- (n > 0 and loops > 0 and loops < n) || {:error, "web clips.tsv has #{n} clips, #{loops} loops"} do
-      IO.puts("  web pck: #{map_size(files)} files, #{n} walk clips (#{loops} loops)")
-      :ok
-    end
+    Enum.reduce_while(@web_elfs, :ok, fn f, _ ->
+      case {File.read(Path.join(elf, f)), Map.fetch(files, f)} do
+        {{:ok, b}, {:ok, b}} -> {:cont, :ok}
+        {{:ok, _}, {:ok, _}} -> {:halt, {:error, "#{f} in the web pck differs from its input"}}
+        {{:ok, _}, :error} -> {:halt, {:error, "the web pck lacks #{f}"}}
+        {e, _} -> {:halt, e}
+      end
+    end)
   end
 
   defp ok_or({:ok, v}, _), do: {:ok, v}

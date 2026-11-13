@@ -180,15 +180,12 @@ jobs:
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
-      - name: Fetch the guest programs and the motion-matching clip data
+      - name: Fetch the guest programs
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           tools/fetch_guest_assets.sh
-          git clone -q --depth 1 --filter=blob:none --sparse \
-            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
-          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
       - name: Fetch the skintokens auto-rig weights
         run: |
@@ -232,9 +229,8 @@ jobs:
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine"
           export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
-                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
-          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package Linux
         run: |
@@ -471,15 +467,12 @@ jobs:
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
-      - name: Fetch the guest programs and the motion-matching clip data
+      - name: Fetch the guest programs
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           tools/fetch_guest_assets.sh
-          git clone -q --depth 1 --filter=blob:none --sparse \
-            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
-          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
       - name: Fetch the skintokens auto-rig weights
         run: |
@@ -523,9 +516,8 @@ jobs:
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine"
           export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
-                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
-          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package macOS
         run: |
@@ -778,15 +770,12 @@ jobs:
           sha256sum -c cli.sums
           mv fdbcli.* ..
           chmod +x ../fdbserver.* ../fdbcli.*
-      - name: Fetch the guest programs and the motion-matching clip data
+      - name: Fetch the guest programs
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -eu
           tools/fetch_guest_assets.sh
-          git clone -q --depth 1 --filter=blob:none --sparse \
-            https://github.com/V-Sekai-fire/interactor-motion-matching-guest.git "$RUNNER_TEMP/mm-repo"
-          git -C "$RUNNER_TEMP/mm-repo" sparse-checkout set data
           ls -la ./*.elf
       - name: Fetch the skintokens auto-rig weights
         run: |
@@ -830,9 +819,8 @@ jobs:
           export GODOT="$RUNNER_TEMP/engine/godot.linuxbsd.editor.double.x86_64"
           export ENGINE="$RUNNER_TEMP/engine"
           export ELF="$PWD/skintokens.elf" USD_ELF="$PWD/usd.elf" MOTION_ELF="$PWD/motion.elf" \
-                 HEADFIT_ELF="$PWD/headfit.elf" MM_ELF="$PWD/mm.elf" MUJOCO_ELF="$PWD/mujoco.elf" \
+                 HEADFIT_ELF="$PWD/headfit.elf" \
                  PERSONA_ELF="$PWD/persona.elf"
-          export MM_DATA="$RUNNER_TEMP/mm-repo/data/kimodo-locomotion:$RUNNER_TEMP/mm-repo/data/o3de-motionmatching"
           elixir tools/package_desktop.exs pck "$RUNNER_TEMP/out"
       - name: Package Windows
         run: |
