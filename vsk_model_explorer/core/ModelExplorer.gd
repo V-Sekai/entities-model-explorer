@@ -9,7 +9,6 @@ const Worker = preload("res://vsk_model_explorer/core/Worker.gd")
 var worker: Worker
 
 const CardStyle = preload("res://vsk_model_explorer/core/CardStyle.gd")
-const WalkBar = preload("res://vsk_model_explorer/core/WalkBar.gd")
 const McpSwitch = preload("res://vsk_model_explorer/core/McpSwitch.gd")
 const BuildConsts = preload("res://addons/vsk_version/build_constants.gd")
 const gltf_vrm_extension_const = preload("res://addons/vrm/vrm_extension.gd")
@@ -25,8 +24,6 @@ var color_chart: Node3D
 var motion: Node
 const Flex = preload("res://vsk_model_explorer/core/Flex.gd")
 var flex: Node
-const MotionMatch = preload("res://vsk_model_explorer/core/MotionMatch.gd")
-var move: Node
 # The clip the motion step just added: the animation list plays it once the file reopens.
 var play_after_load := ""
 
@@ -90,22 +87,6 @@ func _ready():
 		if "--features-quit" in args:
 			print("VIEWER-FEATURES rig=%s motion=%s" % [rig_on, motion_on])
 			get_tree().quit(0)
-	# M: the open rig walks like a character controller (motion matching on mm.elf), on the
-	# desktop and on the web.
-	move = MotionMatch.new()
-	if move.available() or "--move-quit" in OS.get_cmdline_user_args():
-		add_child(move)
-		move.status = auto_rig.show_status
-		move.auto_rig = auto_rig
-		move.moves_made.connect(_load_file)
-		for row in MotionMatch.CARD_ROWS:
-			add_control_row(row)
-		var walk_bar := WalkBar.new()  # Walk, Course and Grid buttons: none of it needs a keyboard
-		walk_bar.move = move
-		controls_card.get_parent().add_child(walk_bar)
-	else:
-		move.free()
-		move = null
 	if ClassDB.get_class_list().find("FBXDocument") != -1:
 		fbx_doc = ClassDB.instantiate("FBXDocument")
 
@@ -233,8 +214,6 @@ func _load_file(file_path: String):
 
 	if motion:
 		motion.source = normalized_path
-	if move:
-		move.source = normalized_path
 
 	if ext == "glb" or ext == "gltf" or ext == "vrm":
 		gltf_start_to_load.emit()
