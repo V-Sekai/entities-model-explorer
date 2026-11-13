@@ -45,7 +45,7 @@ on:
         default: true
       engine_tag:
         description: "entities-zone release to take the double-precision engine from"
-        default: "v0.0.0-20261108202140-679bf7601682"
+        default: "v0.0.0-20261112160857-1ae0c072e9aa"
 
 permissions:
   contents: write
@@ -55,7 +55,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ENGINE_TAG: ${{ inputs.engine_tag || 'v0.0.0-20261106225526-d632cdf2be4c' }}
+  ENGINE_TAG: ${{ inputs.engine_tag || 'v0.0.0-20261112160857-1ae0c072e9aa' }}
   # The FoundationDB release fdbcli comes from; its server and client match the engine's (7.3).
   FDB_RELEASE: 7.3.79-weftspun-dev.2
   STAGE: ${{ inputs.stage || 'dev' }}

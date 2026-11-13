@@ -42,7 +42,7 @@ defmodule LocalBuildTest do
     engine = Path.join(cache, "engine")
     notices = Path.join(cache, "notices")
     skip_fetch = "--skip-fetch" in argv
-    engine_tag = System.get_env("ENGINE_TAG") || "v0.0.0-20261106225526-d632cdf2be4c"
+    engine_tag = System.get_env("ENGINE_TAG") || "v0.0.0-20261112160857-1ae0c072e9aa"
     fdb_release = System.get_env("FDB_RELEASE") || "7.3.79-weftspun-dev.2"
     work = mktemp_dir!()
 
