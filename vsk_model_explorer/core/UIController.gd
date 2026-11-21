@@ -537,10 +537,7 @@ func calc_data_size(byte_size: int) -> String:
 
 
 func _set_wireframe(button_pressed):
-	if button_pressed:
-		get_viewport().debug_draw = Viewport.DEBUG_DRAW_WIREFRAME
-	else:
-		get_viewport().debug_draw = Viewport.DEBUG_DRAW_DISABLED
+	WireView.apply(get_tree(), button_pressed)
 
 
 func _on_mesh_item_selected(tree: Tree):
