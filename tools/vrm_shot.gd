@@ -25,10 +25,10 @@ func run() -> void:
 	root.add_child(world)
 	var env := Environment.new()
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.639216, 0.294118, 0.611765)
-	sky_mat.sky_horizon_color = Color(0.541176, 0.666667, 0.811765)
-	sky_mat.ground_bottom_color = Color(0.243137, 0.45098, 0.705882)
-	sky_mat.ground_horizon_color = Color(0.32549, 0.694118, 0.917647)
+	sky_mat.sky_top_color = Color(0.6, 0.6, 0.6)
+	sky_mat.sky_horizon_color = Color(0.78, 0.78, 0.78)
+	sky_mat.ground_bottom_color = Color(0.4, 0.4, 0.4)
+	sky_mat.ground_horizon_color = Color(0.78, 0.78, 0.78)
 	env.sky = Sky.new()
 	env.sky.sky_material = sky_mat
 	env.background_mode = Environment.BG_SKY
