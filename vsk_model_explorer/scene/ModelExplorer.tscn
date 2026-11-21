@@ -9,10 +9,10 @@
 [ext_resource type="Script" uid="uid://gv60fo01hmj2" path="res://vsk_model_explorer/core/ProgressIndicator.gd" id="7_mw4jw"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_je8ca"]
-sky_top_color = Color(0.639216, 0.294118, 0.611765, 1)
-sky_horizon_color = Color(0.541176, 0.666667, 0.811765, 1)
-ground_bottom_color = Color(0.243137, 0.45098, 0.705882, 1)
-ground_horizon_color = Color(0.32549, 0.694118, 0.917647, 1)
+sky_top_color = Color(0.6, 0.6, 0.6, 1)
+sky_horizon_color = Color(0.78, 0.78, 0.78, 1)
+ground_bottom_color = Color(0.4, 0.4, 0.4, 1)
+ground_horizon_color = Color(0.78, 0.78, 0.78, 1)
 
 [sub_resource type="Sky" id="Sky_h8kkh"]
 sky_material = SubResource("ProceduralSkyMaterial_je8ca")
